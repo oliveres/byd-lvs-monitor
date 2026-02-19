@@ -1,6 +1,6 @@
 # BYD LVS Premium — Modbus Protocol Documentation
 
-> Proprietary Modbus protocol for cell-level monitoring of BYD Battery-Box Premium LVS
+> Modbus proprietary protocol for cell-level monitoring of BYD Battery-Box Premium LVS
 > via Modbus RTU over TCP. Verified against BE Connect Plus service application.
 >
 > **Date:** 2026-02-19
@@ -161,7 +161,8 @@ bms_id 9+ returns no response.
 | 4 | INT16 | 1 | Max temperature (°C) |
 | 5 | INT16 | 1 | Min temperature (°C) |
 | 6 | packed | hi/lo | Max temp: hi=sensor#, lo=module# |
-| 7–14 | UINT16 | bitmask | Cell balancing flags (1 bit per cell) |
+| 7 | UINT16 | bitmask | Cell balancing flags for this module (1 bit/cell, see §4.5) |
+| 8–14 | UINT16 | bitmask | Reserved (HVS/HVM use for multi-module balancing) |
 | 15–16 | UINT32 | ×0.001 | Charge lifetime energy (kWh, LE word order) |
 | 17–18 | UINT32 | ×0.001 | Discharge lifetime energy (kWh, LE word order) |
 | 19–20 | — | — | Unknown |
@@ -201,7 +202,53 @@ if t_hi > 127: t_hi -= 256      # sign extension
 if t_lo > 127: t_lo -= 256
 ```
 
-### 4.5 Complete Read Example
+### 4.5 Cell Balancing Flags (Register 7)
+
+For LVS, register `r[7]` in the cell data response is a 16-bit bitmask where
+each bit corresponds to one cell. Bit 0 = Cell 1, Bit 15 = Cell 16.
+A bit value of 1 means that cell is currently being balanced (passive balancing —
+excess energy dissipated as heat through a bleed resistor).
+
+```python
+bal_flags = r[7]  # e.g. 0x0022 = bits 1 and 5 set
+for cell in range(16):
+    is_balancing = (bal_flags >> cell) & 1
+    if is_balancing:
+        print(f"  Cell {cell+1} is balancing")
+```
+
+**When does balancing occur?**
+
+BYD LVS uses passive balancing which activates when:
+- SOC is high (typically >80%, often near full charge)
+- Cell voltage spread exceeds ~40-50 mV
+- The system is charging or at rest (not during heavy discharge)
+
+Balancing events are also logged as event codes 0x11 (Start Balancing) and
+0x12 (Stop Balancing) in the BMU event log. The Start Balancing log entry
+contains the max/min cell voltages and a balancing mask:
+
+```
+Start Balancing log data (23 bytes):
+  [0-1]  max_cell_voltage (UINT16 LE, mV)
+  [2-3]  min_cell_voltage (UINT16 LE, mV)
+  [4-5]  balancing_mask (UINT16 LE, same as reg[7])
+  [6-22] 0xFF padding
+
+Stop Balancing log data:
+  [0-1]  max_cell_voltage at end (UINT16 LE, mV)
+  [2-3]  min_cell_voltage at end (UINT16 LE, mV)
+  [4-5]  0x0000 (balancing stopped)
+  [6-22] 0xFF padding
+```
+
+Example from real system:
+```
+Start: 8a 0d 51 0d 01 80 → max=3466mV, min=3409mV, Δ=57mV, mask=0x8001
+Stop:  04 0d 03 0d 00 00 → max=3332mV, min=3331mV, Δ=1mV, balanced!
+```
+
+### 4.6 Complete Read Example
 
 ```python
 import time
@@ -345,11 +392,94 @@ Similar to cell data, but reads historical event logs:
 ```
 Step 1: WRITE (FC16) to 0x05A0, payload: [unit_id, 0x8100]
 Step 2: POLL 0x05A1 until == 0x8801
-Step 3: READ from 0x05A8, count=65, repeat 5 times
+Step 3: READ from 0x05A8, count=65, repeat 5 times (325 registers)
 ```
 
-Log entries contain timestamp, event code, and description. Used by BE Connect
-Plus for the Logs tab.
+Log entries contain timestamp, event code, and 23 bytes of context data.
+Used by BE Connect Plus "Logs" tab.
+
+### 7.1 Event Codes
+
+| Code | Hex | Description |
+|------|-----|-------------|
+| 0 | 0x00 | Power ON |
+| 1 | 0x01 | Power OFF |
+| 2 | 0x02 | Events record |
+| 3 | 0x03 | Timing Record |
+| 4 | 0x04 | Start Charging |
+| 5 | 0x05 | Stop Charging |
+| 6 | 0x06 | Start DisCharging |
+| 7 | 0x07 | Stop DisCharging |
+| 8 | 0x08 | SOC calibration rough |
+| 9 | 0x09 | SOC calibration fine |
+| 10 | 0x0A | SOC calibration Stop |
+| 11 | 0x0B | CAN Communication failed |
+| 12 | 0x0C | Serial Communication failed |
+| 13 | 0x0D | Receive PreCharge Command |
+| 14 | 0x0E | PreCharge Successful |
+| 15 | 0x0F | PreCharge Failure |
+| 16 | 0x10 | Start end SOC calibration |
+| 17 | 0x11 | **Start Balancing** |
+| 18 | 0x12 | **Stop Balancing** |
+| 19 | 0x13 | Address Registered |
+| 20 | 0x14 | System Functional Safety Fault |
+| 21 | 0x15 | Events additional info |
+| 101 | 0x65 | Start Firmware Update |
+| 102 | 0x66 | Firmware Update finish |
+| 103 | 0x67 | Firmware Update fails |
+| 104 | 0x68 | Firmware Jump into other section |
+| 105 | 0x69 | Parameters table Update |
+| 106 | 0x6A | SN Code was Changed |
+| 107 | 0x6B | Current Calibration |
+| 108 | 0x6C | Battery Voltage Calibration |
+| 109 | 0x6D | PackVoltage Calibration |
+| 110 | 0x6E | SOC/SOH Calibration |
+| 111 | 0x6F | DateTime Calibration |
+
+### 7.2 Log Data Format (23 bytes per entry)
+
+**Charge/Discharge events** (codes 0x02–0x07):
+```
+Byte   Type     Description
+[0-7]  8×UINT8  Warning/error flags
+[8]    UINT8    Status byte (0x0B = normal operation)
+[9]    UINT8    SOC (%)
+[10]   UINT8    SOH (%)
+[11-12] UINT16 LE  Battery voltage (×0.1V)
+[13-14] UINT16 LE  Output voltage (×0.1V)
+[15-16] INT16 LE   Current (×0.1A, signed)
+[17-18] UINT16 LE  Max cell voltage (mV)
+[19-20] UINT16 LE  Min cell voltage (mV)
+[21]   INT8     Max temperature (°C)
+[22]   INT8     Min temperature (°C)
+```
+
+**Balancing events** (codes 0x11, 0x12):
+```
+Byte   Type     Description
+[0-1]  UINT16 LE  Max cell voltage (mV)
+[2-3]  UINT16 LE  Min cell voltage (mV)
+[4-5]  UINT16 LE  Balancing mask (same format as reg[7])
+[6-22] 0xFF       Padding
+```
+
+**DateTime Calibration** (code 0x6F):
+```
+Byte   Description
+[0]    Year - 2000
+[1]    Month
+[2]    Day
+[3]    Hour
+[4]    Minute
+[5]    Second
+[6-22] 0xFF padding
+```
+
+### 7.3 Log Data Source
+
+Event codes and log format from
+[sarnau/BYD-Battery-Box-Infos](https://github.com/sarnau/BYD-Battery-Box-Infos),
+verified against BE Connect Plus CSV export.
 
 ---
 
@@ -422,8 +552,15 @@ All values verified against BE Connect Plus v2.9 on 2026-02-19:
 │             read_holding_registers(0x0558, 65) × 4              │
 │             → regs[49:65] = 16 cell voltages (mV)              │
 │             → regs[180:184] = 8 temperatures (packed INT8)     │
+│             → regs[7] = balancing bitmask (1=active)           │
+│                                                                 │
+│ LOG DATA:   write_registers(0x05A0, [bms_id, 0x8100])          │
+│             poll 0x05A1 until == 0x8801                         │
+│             read_holding_registers(0x05A8, 65) × 5              │
+│             → event code, timestamp, 23 bytes context          │
 │                                                                 │
 │ MODULES:    bms_id 1-4 = Tower 1, bms_id 5-8 = Tower 2        │
+│             auto-detect: 0x050F = tower count × 4              │
 │                                                                 │
 │ TIMING:     ~2s per module, ~20s for full 8-module scan        │
 │                                                                 │
