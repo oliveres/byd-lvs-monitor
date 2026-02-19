@@ -27,7 +27,7 @@ Reads individual cell voltages, temperatures, SOC/SOH, balancing status and erro
 
 ```bash
 # Install
-git clone https://github.com/YOUR_USER/byd-battery-monitor.git
+git clone https://github.com/oliveres/byd-battery-monitor.git
 cd byd-battery-monitor
 pip install pymodbus
 
