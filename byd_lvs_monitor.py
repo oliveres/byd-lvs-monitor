@@ -484,23 +484,25 @@ examples:
     return p.parse_args()
 
 
-DISCLAIMER = """\
-  ┌─────────────────────────────────────────────────────────────────────────────┐
-  │  DISCLAIMER                                                                │
-  │                                                                            │
-  │  This software is NOT an official BYD diagnostic tool.                     │
-  │  It is provided "AS IS" without warranty of any kind.                      │
-  │                                                                            │
-  │  By using this software, you acknowledge and agree that:                   │
-  │  - The author assumes NO liability for any damages whatsoever              │
-  │  - You waive all claims for compensation arising from its use              │
-  │  - You accept full responsibility for any decisions made based             │
-  │    on information provided by this software                                │
-  │  - Incorrect readings may occur due to communication errors                │
-  │    or firmware differences                                                 │
-  │                                                                            │
-  │  BYD and Battery-Box are registered trademarks of BYD Company Limited.     │
-  └─────────────────────────────────────────────────────────────────────────────┘"""
+DISCLAIMER = """
+  ┌──────────────────────────────────────────────────────────────────────────────┐
+  │                                                                              │
+  │  DISCLAIMER                                                                  │
+  │                                                                              │
+  │  This software is NOT an official BYD diagnostic tool.                       │
+  │  It is provided "AS IS" without warranty of any kind.                        │
+  │                                                                              │
+  │  By using this software, you acknowledge and agree that:                     │
+  │  - The author assumes NO liability for any damages whatsoever                │
+  │  - You waive all claims for compensation arising from its use                │
+  │  - You accept full responsibility for any decisions made based               │
+  │    on information provided by this software                                  │
+  │  - Incorrect readings may occur due to communication errors                  │
+  │    or firmware differences                                                   │
+  │                                                                              │
+  │  BYD and Battery-Box are registered trademarks of BYD Company Limited.       │
+  │                                                                              │
+  └──────────────────────────────────────────────────────────────────────────────┘"""
 
 
 def main():
