@@ -48,6 +48,19 @@ MODULES_PER_TOWER = 4       # LVS: 4 modules per tower
 POLL_TIMEOUT = 10           # seconds to wait for 0x8801
 POLL_INTERVAL = 0.5         # seconds between polls
 
+# ── Warranty & Energy Constants ───────────────────────────
+MODULE_USABLE_KWH = 3.6    # usable capacity per cycle (4.0 kWh × 0.9, min SOC ~10%)
+# BYD LVS warranty: Minimum Throughput Energy (discharge) per tower model
+# Source: BYD Battery-Box Premium LVS Limited Warranty (Europe, V1.1)
+WARRANTY_MWH = {
+    1: 11.88,   # LVS 4.0
+    2: 23.76,   # LVS 8.0
+    3: 35.64,   # LVS 12.0
+    4: 47.53,   # LVS 16.0
+    5: 59.41,   # LVS 20.0
+    6: 71.29,   # LVS 24.0
+}
+
 # Modbus register addresses
 REG_SUMMARY      = 0x0500   # System summary (FC3, 25 regs)
 REG_CONFIG        = 0x0000   # Configuration (FC3, 0x66 regs)
@@ -95,6 +108,9 @@ def read_summary(client):
         return None
 
     r = result.registers
+    # Lifetime energy: UINT32 little-endian word order × 0.001 = kWh
+    charge_kwh = (r[18] * 65536 + r[17]) * 0.001 if len(r) > 18 else 0
+    discharge_kwh = (r[20] * 65536 + r[19]) * 0.001 if len(r) > 20 else 0
     return {
         'soc': r[0],
         'max_cell_v': r[1] / 100,
@@ -106,7 +122,8 @@ def read_summary(client):
         'min_temp': r[7],
         'towers': r[15] if len(r) > 15 else 0,
         'pack_voltage_2': r[16] / 100 if len(r) > 16 else 0,
-        'charge_cycles': r[17] if len(r) > 17 else 0,
+        'charge_energy_kwh': charge_kwh,
+        'discharge_energy_kwh': discharge_kwh,
     }
 
 
@@ -235,11 +252,18 @@ def print_summary(summary):
         print("  [Summary unavailable]")
         return
     s = summary
-    SW = 68
+    SW = 98
     print(f"\n  ┌{'─' * SW}┐")
     curr_s = f"{s['current']:+.1f}A"
-    l1 = f"  SOC: {s['soc']:3d}%   SOH: {s['soh']:3d}%   Pack: {s['pack_voltage']:6.2f}V   Current: {curr_s:>8s}"
-    l2 = f"  Cell V: {s['max_cell_v']:.2f}V - {s['min_cell_v']:.2f}V   Temp: {s['min_temp']:2d}°C - {s['max_temp']:2d}°C"
+    pwr = s['current'] * s['pack_voltage']
+    pwr_s = f"{pwr:+.0f}W"
+    l1 = f"  SOC: {s['soc']:3d}%   SOH: {s['soh']:3d}%   Pack: {s['pack_voltage']:6.2f}V   {curr_s:>8s}   {pwr_s:>7s}"
+    l2 = f"  Cell V: {s['max_cell_v']:.2f} - {s['min_cell_v']:.2f}V   Temp: {s['min_temp']:2d} - {s['max_temp']:2d}°C"
+    # Energy throughput
+    ch = s['charge_energy_kwh']
+    dch = s['discharge_energy_kwh']
+    eff = (dch / ch * 100) if ch > 0 else 0
+    l2 += f"   Energy: {ch:.0f}⬆ {dch:.0f}⬇ kWh   η={eff:.1f}%"
     print(f"  │{l1:<{SW}}│")
     print(f"  │{l2:<{SW}}│")
     print(f"  └{'─' * SW}┘")
@@ -425,14 +449,85 @@ def print_soc_overview(all_data, num_modules):
     print(f"  └{'─' * OW}┘")
 
 
+def print_energy_overview(all_data, num_modules):
+    """Print energy throughput, estimated cycles, efficiency, warranty usage."""
+    towers = max(1, num_modules // MODULES_PER_TOWER)
+    mods_per_tower = num_modules // towers
+    warranty_per_tower_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000  # kWh
+    sys_warr_kwh = warranty_per_tower_kwh * towers
+
+    EW = 72
+    print(f"\n  ┌{'─' * EW}┐")
+    hdr = (f" {'BMS':>4s} {'Ch kWh':>8s} {'Dch kWh':>8s} {'η%':>6s}"
+           f" {'Cycles':>7s} {'Warranty%':>9s}")
+    print(f"  │{hdr:<{EW}}│")
+    print(f"  ├{'─' * EW}┤")
+
+    sys_ch = 0
+    sys_dch = 0
+
+    for bms_id in range(1, num_modules + 1):
+        d = all_data.get(bms_id)
+        if not d:
+            print(f"  │{f' BMS{bms_id}  — no data —':<{EW}}│")
+            continue
+
+        ch = d['charge_energy_kwh']
+        dch = d['discharge_energy_kwh']
+        eff = (dch / ch * 100) if ch > 0 else 0
+        cycles = dch / MODULE_USABLE_KWH
+        sys_ch += ch
+        sys_dch += dch
+
+        # Warranty % per module (proportional share)
+        mod_warranty_kwh = sys_warr_kwh / num_modules if sys_warr_kwh > 0 else 0
+        warr_pct = (dch / mod_warranty_kwh * 100) if mod_warranty_kwh > 0 else 0
+
+        row = (f" BMS{bms_id}"
+               f" {ch:8.1f}"
+               f" {dch:8.1f}"
+               f" {eff:6.1f}"
+               f" {cycles:7.0f}"
+               f" {warr_pct:8.1f}%")
+        print(f"  │{row:<{EW}}│")
+
+    # System total
+    print(f"  ├{'─' * EW}┤")
+    sys_eff = (sys_dch / sys_ch * 100) if sys_ch > 0 else 0
+    sys_cycles = sys_dch / (MODULE_USABLE_KWH * num_modules)
+    sys_warr = (sys_dch / sys_warr_kwh * 100) if sys_warr_kwh > 0 else 0
+
+    row = (f" SYS "
+           f" {sys_ch:8.1f}"
+           f" {sys_dch:8.1f}"
+           f" {sys_eff:6.1f}"
+           f" {sys_cycles:7.0f}"
+           f" {sys_warr:8.1f}%"
+           f"  limit: {sys_warr_kwh/1000:.1f} MWh")
+    print(f"  │{row:<{EW}}│")
+    print(f"  └{'─' * EW}┘")
+
+
 def output_json(summary, all_data):
     """Output all data as JSON for integrations."""
+    num_modules = len(all_data)
+    towers = max(1, num_modules // MODULES_PER_TOWER)
+    mods_per_tower = num_modules // towers if towers > 0 else num_modules
+    warranty_per_tower_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000
+
     out = {
         'timestamp': datetime.now().isoformat(),
         'summary': summary,
         'modules': {},
     }
     for bms_id, d in all_data.items():
+        ch = d['charge_energy_kwh']
+        dch = d['discharge_energy_kwh']
+        eff = (dch / ch * 100) if ch > 0 else 0
+        cycles = dch / MODULE_USABLE_KWH
+        mod_warranty_kwh = warranty_per_tower_kwh / mods_per_tower if warranty_per_tower_kwh > 0 and mods_per_tower > 0 else 0
+        warr_pct = (dch / mod_warranty_kwh * 100) if mod_warranty_kwh > 0 else 0
+
         out['modules'][f'BMS{bms_id}'] = {
             'bms_id': bms_id,
             'soc': d['soc'],
@@ -450,8 +545,11 @@ def output_json(summary, all_data):
             'errors': d['errors'],
             'warnings1': d['warnings1'],
             'warnings2': d['warnings2'],
-            'charge_energy_kwh': round(d['charge_energy_kwh'], 3),
-            'discharge_energy_kwh': round(d['discharge_energy_kwh'], 3),
+            'charge_energy_kwh': round(ch, 3),
+            'discharge_energy_kwh': round(dch, 3),
+            'round_trip_efficiency': round(eff, 1),
+            'estimated_cycles': round(cycles, 1),
+            'warranty_used_pct': round(warr_pct, 1),
         }
     print(json.dumps(out, indent=2))
 
@@ -525,6 +623,7 @@ def main():
             print()
             print_cell_table(all_data, num_modules)
             print_soc_overview(all_data, num_modules)
+            print_energy_overview(all_data, num_modules)
 
             if all_data:
                 total_cells = sum(len(d['cell_voltages']) for d in all_data.values())
