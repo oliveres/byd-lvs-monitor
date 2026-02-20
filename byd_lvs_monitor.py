@@ -89,6 +89,20 @@ def connect(host, port):
     return client
 
 
+def read_bmu_serial(client):
+    """Read BMU serial number from config registers 0x0000 (10 regs = 20 bytes ASCII)."""
+    result = client.read_holding_registers(0x0000, 10, slave=SLAVE_ID)
+    if result.isError():
+        return None
+    serial = ""
+    for v in result.registers:
+        ch1 = (v >> 8) & 0xFF
+        ch2 = v & 0xFF
+        if 32 <= ch1 < 127: serial += chr(ch1)
+        if 32 <= ch2 < 127: serial += chr(ch2)
+    return serial.rstrip('x \x00') or None
+
+
 def detect_modules(client):
     """Auto-detect number of BMS modules from config register 0x0010."""
     result = client.read_holding_registers(0x0010, 1, slave=SLAVE_ID)
@@ -197,6 +211,16 @@ def query_module(client, bms_id):
     data['warnings2'] = r[29] if len(r) > 29 else 0
     data['errors'] = r[48] if len(r) > 48 else 0
 
+    # Module serial number at positions 34-45 (12 regs = 24 bytes ASCII)
+    serial = ""
+    for i in range(34, 46):
+        if i < len(r):
+            ch1 = (r[i] >> 8) & 0xFF
+            ch2 = r[i] & 0xFF
+            if 32 <= ch1 < 127: serial += chr(ch1)
+            if 32 <= ch2 < 127: serial += chr(ch2)
+    data['serial'] = serial.rstrip('x \x00') or None
+
     # 16 cell voltages (mV) at positions 49-64
     data['cell_voltages'] = [signed16(r[49 + i]) for i in range(CELLS_PER_MODULE)]
 
@@ -234,12 +258,13 @@ def rpad(visible_text, ansi_text, width):
     return ansi_text + " " * pad
 
 
-def print_header(host, port, num_modules):
+def print_header(host, port, num_modules, bmu_serial=None):
     """Print report header."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"\n{'═' * 100}")
-    print(f"  BYD LVS Premium — Cell Monitor    {now}    ({host}:{port}, {num_modules} modules)")
-    print(f"{'═' * 100}")
+    sn = f"    SN: {bmu_serial}" if bmu_serial else ""
+    print(f"\n{'═' * 122}")
+    print(f"  BYD LVS Premium — Cell Monitor    {now}    ({host}:{port}, {num_modules} modules){sn}")
+    print(f"{'═' * 122}")
 
 
 def print_summary(summary):
@@ -248,7 +273,7 @@ def print_summary(summary):
         print("  [Summary unavailable]")
         return
     s = summary
-    SW = 98
+    SW = 120
     print(f"\n  ┌{'─' * SW}┐")
     curr_s = f"{s['current']:+.1f}A"
     pwr = s['current'] * s['pack_voltage']
@@ -276,7 +301,7 @@ def print_cell_table(all_data, num_modules, towers=1):
     g_t_max = max(all_t) if all_t else 0
 
     # Fixed inner width
-    IW = 96
+    IW = 118
 
     def line(text_vis, text_ansi=""):
         if not text_ansi:
@@ -312,7 +337,9 @@ def print_cell_table(all_data, num_modules, towers=1):
         mods_per_tower = num_modules // towers if towers > 1 else num_modules
         tower = (bms_id - 1) // mods_per_tower + 1
         mod = (bms_id - 1) % mods_per_tower + 1
-        info = (f"T{tower}M{mod}"
+        sn = d.get('serial') or ''
+        sn_str = f"  {sn}" if sn else ""
+        info = (f"T{tower}M{mod}{sn_str}"
                 f"  SOC={d['soc']:.1f}%  SOH={d['soh']}%"
                 f"  {d['bat_voltage']:.1f}V"
                 f"  {d['current']:+.1f}A"
@@ -592,13 +619,17 @@ def main():
                       file=sys.stderr)
                 num_modules = 8
 
+        # Read BMU serial number
+        bmu_serial = read_bmu_serial(client)
+
         if not args.json:
-            print_header(args.host, args.port, num_modules)
+            print_header(args.host, args.port, num_modules, bmu_serial)
 
         # System summary
         summary = read_summary(client)
         if summary:
             summary['towers'] = args.towers
+            summary['bmu_serial'] = bmu_serial
         if not args.json:
             print_summary(summary)
 
