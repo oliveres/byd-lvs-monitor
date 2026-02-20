@@ -291,7 +291,7 @@ def print_summary(summary):
 
 
 def print_cell_table(all_data, num_modules, towers=1):
-    """Print combined cell voltage + temperature + balancing table."""
+    """Print combined cell voltage + temperature + balancing + energy table."""
     all_v = [v for d in all_data.values() for v in d['cell_voltages']]
     g_v_min = min(all_v) if all_v else 0
     g_v_max = max(all_v) if all_v else 0
@@ -299,6 +299,12 @@ def print_cell_table(all_data, num_modules, towers=1):
     all_t = [t for d in all_data.values() for t in d.get('cell_temps', []) if t > 0]
     g_t_min = min(all_t) if all_t else 0
     g_t_max = max(all_t) if all_t else 0
+
+    # Warranty calculation
+    mods_per_tower = num_modules // towers if towers > 1 else num_modules
+    warranty_per_tower_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000
+    sys_warr_kwh = warranty_per_tower_kwh * towers
+    mod_warranty_kwh = sys_warr_kwh / num_modules if sys_warr_kwh > 0 else 0
 
     # Fixed inner width
     IW = 118
@@ -333,14 +339,12 @@ def print_cell_table(all_data, num_modules, towers=1):
         ct_min = min(ct_valid) if ct_valid else 0
         ct_max = max(ct_valid) if ct_valid else 0
 
-        # Module info line
-        mods_per_tower = num_modules // towers if towers > 1 else num_modules
+        # Module info — line 1: identity + state
         tower = (bms_id - 1) // mods_per_tower + 1
         mod = (bms_id - 1) % mods_per_tower + 1
         sn = d.get('serial') or ''
-        sn_str = f" SN:{sn}" if sn else ""
+        sn_str = f"  SN:{sn}" if sn else ""
 
-        # State
         bal_count = d.get('balancing_active', 0)
         if d['errors']:
             state = f"ERR:0x{d['errors']:04X}"
@@ -348,30 +352,31 @@ def print_cell_table(all_data, num_modules, towers=1):
             state = f"W:0x{d['warnings1']:04X}"
         else:
             state = "OK"
-        bal_tag = f"Balancing:{bal_count}" if bal_count > 0 else "Balancing:OFF"
+        bal_tag = f"Balancing: {bal_count}" if bal_count > 0 else "Balancing: OFF"
+        cycles = d['discharge_energy_kwh'] / MODULE_USABLE_KWH
 
-        info = (f"Tower {tower} Module {mod}{sn_str}"
-                f" State: {state}"
-                f" SOC={d['soc']:.1f}%  SOH={d['soh']}%"
-                f"  {d['bat_voltage']:.1f}V"
-                f"  {d['current']:+.1f}A"
-                f"  {d['power']:+.0f}W"
-                f"  {d['min_temp']}-{d['max_temp']}°C"
-                f" {bal_tag}")
-
-        vis = f"BMS{bms_id} {info}"
+        line1 = (f"Tower {tower}  Module {mod}{sn_str}"
+                 f"  State: {state}  {bal_tag}  Cycles: ~{cycles:.0f}")
+        vis1 = f"BMS{bms_id}  {line1}"
         ansi_state = color(state, '1;31') if state != "OK" else color(state, '1;32')
-        ansi_bal = color(f'Balancing:{bal_count}', '1;33') if bal_count > 0 else "Balancing:OFF"
-        ansi_info = (f"Tower {tower} Module {mod}{sn_str}"
-                     f" State: {ansi_state}"
-                     f" SOC={d['soc']:.1f}%  SOH={d['soh']}%"
-                     f"  {d['bat_voltage']:.1f}V"
-                     f"  {d['current']:+.1f}A"
-                     f"  {d['power']:+.0f}W"
-                     f"  {d['min_temp']}-{d['max_temp']}°C"
-                     f" {ansi_bal}")
-        ansi = f"{color(f'BMS{bms_id}', '1;37')} {ansi_info}"
-        line(vis, ansi)
+        ansi_bal = color(f'Balancing: {bal_count}', '1;33') if bal_count > 0 else "Balancing: OFF"
+        ansi1 = (f"{color(f'BMS{bms_id}', '1;37')}  Tower {tower}  Module {mod}{sn_str}"
+                 f"  State: {ansi_state}  {ansi_bal}  Cycles: ~{cycles:.0f}")
+        line(vis1, ansi1)
+
+        # Module info — line 2: electrical + energy
+        ch = d['charge_energy_kwh']
+        dch = d['discharge_energy_kwh']
+        eff = (dch / ch * 100) if ch > 0 else 0
+        warr_pct = (dch / mod_warranty_kwh * 100) if mod_warranty_kwh > 0 else 0
+
+        line2 = (f"SoC={d['soc']:.1f}%  SoH={d['soh']}%"
+                 f"  {d['bat_voltage']:.1f}V  {d['current']:+.1f}A  {d['power']:+.0f}W"
+                 f"  {d['min_temp']}-{d['max_temp']}°C"
+                 f"  kWh-in: {ch:.1f}  kWh-out: {dch:.1f}"
+                 f"  η: {eff:.0f}%  Warranty: {warr_pct:.1f}%")
+        vis2 = f"      {line2}"
+        line(vis2)
 
         # Voltage row
         vis_parts = "  mV"
@@ -453,63 +458,6 @@ def print_cell_table(all_data, num_modules, towers=1):
     print(f"  └{'─' * (IW + 2)}┘")
 
 
-
-def print_energy_overview(all_data, num_modules, towers=1):
-    """Print energy throughput, estimated cycles, efficiency, warranty usage."""
-    mods_per_tower = num_modules // towers if towers > 1 else num_modules
-    warranty_per_tower_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000  # kWh
-    sys_warr_kwh = warranty_per_tower_kwh * towers
-
-    EW = 72
-    print(f"\n  ┌{'─' * EW}┐")
-    hdr = (f" {'BMS':>4s} {'Ch kWh':>8s} {'Dch kWh':>8s} {'η%':>6s}"
-           f" {'Cycles':>7s} {'Warranty%':>9s}")
-    print(f"  │{hdr:<{EW}}│")
-    print(f"  ├{'─' * EW}┤")
-
-    sys_ch = 0
-    sys_dch = 0
-
-    for bms_id in range(1, num_modules + 1):
-        d = all_data.get(bms_id)
-        if not d:
-            print(f"  │{f' BMS{bms_id}  — no data —':<{EW}}│")
-            continue
-
-        ch = d['charge_energy_kwh']
-        dch = d['discharge_energy_kwh']
-        eff = (dch / ch * 100) if ch > 0 else 0
-        cycles = dch / MODULE_USABLE_KWH
-        sys_ch += ch
-        sys_dch += dch
-
-        # Warranty % per module (proportional share)
-        mod_warranty_kwh = sys_warr_kwh / num_modules if sys_warr_kwh > 0 else 0
-        warr_pct = (dch / mod_warranty_kwh * 100) if mod_warranty_kwh > 0 else 0
-
-        row = (f" BMS{bms_id}"
-               f" {ch:8.1f}"
-               f" {dch:8.1f}"
-               f" {eff:6.1f}"
-               f" {cycles:7.0f}"
-               f" {warr_pct:8.1f}%")
-        print(f"  │{row:<{EW}}│")
-
-    # System total
-    print(f"  ├{'─' * EW}┤")
-    sys_eff = (sys_dch / sys_ch * 100) if sys_ch > 0 else 0
-    sys_cycles = sys_dch / (MODULE_USABLE_KWH * num_modules)
-    sys_warr = (sys_dch / sys_warr_kwh * 100) if sys_warr_kwh > 0 else 0
-
-    row = (f" SYS "
-           f" {sys_ch:8.1f}"
-           f" {sys_dch:8.1f}"
-           f" {sys_eff:6.1f}"
-           f" {sys_cycles:7.0f}"
-           f" {sys_warr:8.1f}%"
-           f"  limit: {sys_warr_kwh/1000:.1f} MWh")
-    print(f"  │{row:<{EW}}│")
-    print(f"  └{'─' * EW}┘")
 
 
 def output_json(summary, all_data, towers=1):
@@ -633,7 +581,6 @@ def main():
         else:
             print()
             print_cell_table(all_data, num_modules, args.towers)
-            print_energy_overview(all_data, num_modules, args.towers)
 
             if all_data:
                 total_cells = sum(len(d['cell_voltages']) for d in all_data.values())
