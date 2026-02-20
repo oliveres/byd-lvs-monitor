@@ -44,7 +44,6 @@ DEFAULT_PORT = 8080
 SLAVE_ID = 1
 CELLS_PER_MODULE = 16       # LFP cells per module
 TEMPS_PER_MODULE = 8        # NTC sensors per module
-MODULES_PER_TOWER = 4       # LVS: 4 modules per tower
 POLL_TIMEOUT = 10           # seconds to wait for 0x8801
 POLL_INTERVAL = 0.5         # seconds between polls
 
@@ -91,14 +90,12 @@ def connect(host, port):
 
 
 def detect_modules(client):
-    """Auto-detect number of BMS modules from summary registers."""
-    result = client.read_holding_registers(REG_SUMMARY, 25, slave=SLAVE_ID)
+    """Auto-detect number of BMS modules from config register 0x0010."""
+    result = client.read_holding_registers(0x0010, 1, slave=SLAVE_ID)
     if result.isError():
         return None
-    towers = result.registers[15] if len(result.registers) > 15 else 0
-    if towers > 0:
-        return towers * MODULES_PER_TOWER
-    return None
+    module_count = result.registers[0] & 0x0F
+    return module_count if module_count > 0 else None
 
 
 def read_summary(client):
@@ -116,11 +113,10 @@ def read_summary(client):
         'max_cell_v': r[1] / 100,
         'min_cell_v': r[2] / 100,
         'soh': r[3],
-        'current': signed16(r[4]) / 10,
+        'current': -(signed16(r[4]) / 10),
         'pack_voltage': r[5] / 100,
         'max_temp': r[6],
         'min_temp': r[7],
-        'towers': r[15] if len(r) > 15 else 0,
         'pack_voltage_2': r[16] / 100 if len(r) > 16 else 0,
         'charge_energy_kwh': charge_kwh,
         'discharge_energy_kwh': discharge_kwh,
@@ -194,7 +190,7 @@ def query_module(client, bms_id):
     data['output_voltage'] = signed16(r[24]) * 0.1  # V
     data['soc'] = signed16(r[25]) * 0.1              # %
     data['soh'] = signed16(r[26])                    # %
-    data['current'] = signed16(r[27]) * 0.1           # A
+    data['current'] = -(signed16(r[27]) * 0.1)          # A (inverted: positive = charging)
 
     # Warnings & errors
     data['warnings1'] = r[28] if len(r) > 28 else 0
@@ -269,7 +265,7 @@ def print_summary(summary):
     print(f"  └{'─' * SW}┘")
 
 
-def print_cell_table(all_data, num_modules):
+def print_cell_table(all_data, num_modules, towers=1):
     """Print combined cell voltage + temperature + balancing table."""
     all_v = [v for d in all_data.values() for v in d['cell_voltages']]
     g_v_min = min(all_v) if all_v else 0
@@ -313,8 +309,9 @@ def print_cell_table(all_data, num_modules):
         ct_max = max(ct_valid) if ct_valid else 0
 
         # Module info line
-        tower = (bms_id - 1) // MODULES_PER_TOWER + 1
-        mod = (bms_id - 1) % MODULES_PER_TOWER + 1
+        mods_per_tower = num_modules // towers if towers > 1 else num_modules
+        tower = (bms_id - 1) // mods_per_tower + 1
+        mod = (bms_id - 1) % mods_per_tower + 1
         info = (f"T{tower}M{mod}"
                 f"  SOC={d['soc']:.1f}%  SOH={d['soh']}%"
                 f"  {d['bat_voltage']:.1f}V"
@@ -449,10 +446,9 @@ def print_soc_overview(all_data, num_modules):
     print(f"  └{'─' * OW}┘")
 
 
-def print_energy_overview(all_data, num_modules):
+def print_energy_overview(all_data, num_modules, towers=1):
     """Print energy throughput, estimated cycles, efficiency, warranty usage."""
-    towers = max(1, num_modules // MODULES_PER_TOWER)
-    mods_per_tower = num_modules // towers
+    mods_per_tower = num_modules // towers if towers > 1 else num_modules
     warranty_per_tower_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000  # kWh
     sys_warr_kwh = warranty_per_tower_kwh * towers
 
@@ -508,11 +504,10 @@ def print_energy_overview(all_data, num_modules):
     print(f"  └{'─' * EW}┘")
 
 
-def output_json(summary, all_data):
+def output_json(summary, all_data, towers=1):
     """Output all data as JSON for integrations."""
     num_modules = len(all_data)
-    towers = max(1, num_modules // MODULES_PER_TOWER)
-    mods_per_tower = num_modules // towers if towers > 0 else num_modules
+    mods_per_tower = num_modules // towers if towers > 1 else num_modules
     warranty_per_tower_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000
 
     out = {
@@ -574,6 +569,8 @@ examples:
                    help=f"BMU TCP port (default: {DEFAULT_PORT})")
     p.add_argument("--modules", type=int, default=0,
                    help="number of BMS modules, 0=auto-detect (default: 0)")
+    p.add_argument("--towers", type=int, default=1,
+                   help="number of towers for display grouping (default: 1)")
     p.add_argument("--json", action="store_true",
                    help="output as JSON instead of table")
     return p.parse_args()
@@ -600,6 +597,8 @@ def main():
 
         # System summary
         summary = read_summary(client)
+        if summary:
+            summary['towers'] = args.towers
         if not args.json:
             print_summary(summary)
 
@@ -618,12 +617,12 @@ def main():
                     print(f"  Reading BMS{bms_id}... ✗ failed", end="\r")
 
         if args.json:
-            output_json(summary, all_data)
+            output_json(summary, all_data, args.towers)
         else:
             print()
-            print_cell_table(all_data, num_modules)
+            print_cell_table(all_data, num_modules, args.towers)
             print_soc_overview(all_data, num_modules)
-            print_energy_overview(all_data, num_modules)
+            print_energy_overview(all_data, num_modules, args.towers)
 
             if all_data:
                 total_cells = sum(len(d['cell_voltages']) for d in all_data.values())
