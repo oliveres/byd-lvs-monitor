@@ -338,24 +338,39 @@ def print_cell_table(all_data, num_modules, towers=1):
         tower = (bms_id - 1) // mods_per_tower + 1
         mod = (bms_id - 1) % mods_per_tower + 1
         sn = d.get('serial') or ''
-        sn_str = f"  {sn}" if sn else ""
-        info = (f"T{tower}M{mod}{sn_str}"
-                f"  SOC={d['soc']:.1f}%  SOH={d['soh']}%"
+        sn_str = f" SN:{sn}" if sn else ""
+
+        # State
+        bal_count = d.get('balancing_active', 0)
+        if d['errors']:
+            state = f"ERR:0x{d['errors']:04X}"
+        elif d['warnings1'] or d['warnings2']:
+            state = f"W:0x{d['warnings1']:04X}"
+        else:
+            state = "OK"
+        bal_tag = f"Balancing:{bal_count}" if bal_count > 0 else "Balancing:OFF"
+
+        info = (f"Tower {tower} Module {mod}{sn_str}"
+                f" State: {state}"
+                f" SOC={d['soc']:.1f}%  SOH={d['soh']}%"
                 f"  {d['bat_voltage']:.1f}V"
                 f"  {d['current']:+.1f}A"
                 f"  {d['power']:+.0f}W"
-                f"  {d['min_temp']}-{d['max_temp']}°C")
-        err_str = ""
-        if d['errors']:
-            err_str += f"  ⚠ ERR:0x{d['errors']:04X}"
-        if d['warnings1'] or d['warnings2']:
-            err_str += f"  ⚠ W:0x{d['warnings1']:04X}"
-        bal_count = d.get('balancing_active', 0)
-        bal_str = f"  ⚡BAL:{bal_count}" if bal_count > 0 else ""
+                f"  {d['min_temp']}-{d['max_temp']}°C"
+                f" {bal_tag}")
 
-        vis = f"BMS{bms_id} {info}{err_str}{bal_str}"
-        ansi_bal = f"  {color(f'⚡BAL:{bal_count}', '1;33')}" if bal_count > 0 else ""
-        ansi = f"{color(f'BMS{bms_id}', '1;37')} {info}{err_str}{ansi_bal}"
+        vis = f"BMS{bms_id} {info}"
+        ansi_state = color(state, '1;31') if state != "OK" else color(state, '1;32')
+        ansi_bal = color(f'Balancing:{bal_count}', '1;33') if bal_count > 0 else "Balancing:OFF"
+        ansi_info = (f"Tower {tower} Module {mod}{sn_str}"
+                     f" State: {ansi_state}"
+                     f" SOC={d['soc']:.1f}%  SOH={d['soh']}%"
+                     f"  {d['bat_voltage']:.1f}V"
+                     f"  {d['current']:+.1f}A"
+                     f"  {d['power']:+.0f}W"
+                     f"  {d['min_temp']}-{d['max_temp']}°C"
+                     f" {ansi_bal}")
+        ansi = f"{color(f'BMS{bms_id}', '1;37')} {ansi_info}"
         line(vis, ansi)
 
         # Voltage row
@@ -437,40 +452,6 @@ def print_cell_table(all_data, num_modules, towers=1):
 
     print(f"  └{'─' * (IW + 2)}┘")
 
-
-def print_soc_overview(all_data, num_modules):
-    """Print SOC/SOH overview table."""
-    OW = 80
-    print(f"\n  ┌{'─' * OW}┐")
-    hdr = f" {'BMS':>4s} {'SOC%':>6s} {'SOH%':>5s} {'BatV':>6s} {'Vout':>6s} {'Curr':>7s} {'Power':>8s} {'Tmin':>4s} {'Tmax':>4s} {'BAL':>4s} {'Errors':>8s}"
-    print(f"  │{hdr:<{OW}}│")
-    print(f"  ├{'─' * OW}┤")
-
-    for bms_id in range(1, num_modules + 1):
-        d = all_data.get(bms_id)
-        if not d:
-            print(f"  │{f' BMS{bms_id}  — no data —':<{OW}}│")
-            continue
-
-        err = "OK" if d['errors'] == 0 else f"0x{d['errors']:04X}"
-        bal_n = d.get('balancing_active', 0)
-        bal_s = f"{bal_n}" if bal_n > 0 else "-"
-        curr_s = f"{d['current']:+.1f}"
-        pwr_s = f"{d['power']:+.0f}W"
-        row = (f" BMS{bms_id}"
-               f" {d['soc']:6.1f}"
-               f" {d['soh']:5d}"
-               f" {d['bat_voltage']:6.1f}"
-               f" {d['output_voltage']:6.1f}"
-               f" {curr_s:>7s}"
-               f" {pwr_s:>8s}"
-               f" {d['min_temp']:4d}"
-               f" {d['max_temp']:4d}"
-               f" {bal_s:>4s}"
-               f" {err:>8s}")
-        print(f"  │{row:<{OW}}│")
-
-    print(f"  └{'─' * OW}┘")
 
 
 def print_energy_overview(all_data, num_modules, towers=1):
@@ -652,7 +633,6 @@ def main():
         else:
             print()
             print_cell_table(all_data, num_modules, args.towers)
-            print_soc_overview(all_data, num_modules)
             print_energy_overview(all_data, num_modules, args.towers)
 
             if all_data:
