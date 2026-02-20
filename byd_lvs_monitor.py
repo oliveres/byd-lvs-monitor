@@ -529,11 +529,46 @@ examples:
                    help="number of towers for display grouping (default: 1)")
     p.add_argument("--json", action="store_true",
                    help="output as JSON instead of table")
+    p.add_argument("--yes", "-y", action="store_true",
+                   help="accept disclaimer without prompting")
     return p.parse_args()
+
+
+DISCLAIMER = """\
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │  DISCLAIMER                                                                │
+  │                                                                            │
+  │  This software is NOT an official BYD diagnostic tool.                     │
+  │  It is provided "AS IS" without warranty of any kind.                      │
+  │                                                                            │
+  │  By using this software, you acknowledge and agree that:                   │
+  │  - The author assumes NO liability for any damages whatsoever              │
+  │  - You waive all claims for compensation arising from its use              │
+  │  - You accept full responsibility for any decisions made based             │
+  │    on information provided by this software                                │
+  │  - Incorrect readings may occur due to communication errors                │
+  │    or firmware differences                                                 │
+  │                                                                            │
+  │  BYD and Battery-Box are registered trademarks of BYD Company Limited.     │
+  └─────────────────────────────────────────────────────────────────────────────┘"""
 
 
 def main():
     args = parse_args()
+
+    if not args.json:
+        print(DISCLAIMER)
+        if not args.yes:
+            try:
+                answer = input("\n  Do you accept these terms? (yes/no): ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print("\n  Aborted.")
+                sys.exit(0)
+            if answer != 'yes':
+                print("  You must accept the terms to use this software.")
+                sys.exit(0)
+        print()
+
     client = connect(args.host, args.port)
 
     try:
@@ -592,13 +627,7 @@ def main():
     finally:
         client.close()
         if not args.json:
-            print(f"\n  Connection closed.")
-            print()
-            print("  DISCLAIMER: This software is not an official diagnostic tool and is provided")
-            print("  with absolutely no warranty. The author assumes no liability for any damages")
-            print("  arising from its use, including decisions made based on its output.")
-            print("  BYD is a registered trademark of BYD Company Limited.")
-            print()
+            print(f"\n  Connection closed.\n")
 
 
 if __name__ == "__main__":
