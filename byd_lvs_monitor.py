@@ -12,13 +12,11 @@ Usage:
   python3 byd_lvs_monitor.py                          # auto-detect on default IP
   python3 byd_lvs_monitor.py --host 192.168.1.155     # custom IP
   python3 byd_lvs_monitor.py --modules 4              # override module count
-  python3 byd_lvs_monitor.py --json                   # JSON output for integrations
 
 License: MIT
 """
 
 import argparse
-import json
 import sys
 import time
 from datetime import datetime
@@ -460,51 +458,6 @@ def print_cell_table(all_data, num_modules, towers=1):
 
 
 
-def output_json(summary, all_data, towers=1):
-    """Output all data as JSON for integrations."""
-    num_modules = len(all_data)
-    mods_per_tower = num_modules // towers if towers > 1 else num_modules
-    warranty_per_tower_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000
-
-    out = {
-        'timestamp': datetime.now().isoformat(),
-        'summary': summary,
-        'modules': {},
-    }
-    for bms_id, d in all_data.items():
-        ch = d['charge_energy_kwh']
-        dch = d['discharge_energy_kwh']
-        eff = (dch / ch * 100) if ch > 0 else 0
-        cycles = dch / MODULE_USABLE_KWH
-        mod_warranty_kwh = warranty_per_tower_kwh / mods_per_tower if warranty_per_tower_kwh > 0 and mods_per_tower > 0 else 0
-        warr_pct = (dch / mod_warranty_kwh * 100) if mod_warranty_kwh > 0 else 0
-
-        out['modules'][f'BMS{bms_id}'] = {
-            'bms_id': bms_id,
-            'soc': d['soc'],
-            'soh': d['soh'],
-            'bat_voltage': d['bat_voltage'],
-            'output_voltage': d['output_voltage'],
-            'current': d['current'],
-            'power': d['power'],
-            'min_temp': d['min_temp'],
-            'max_temp': d['max_temp'],
-            'cell_voltages': d['cell_voltages'],
-            'cell_temps': d['cell_temps'],
-            'balancing': d['balancing'],
-            'balancing_active': d['balancing_active'],
-            'errors': d['errors'],
-            'warnings1': d['warnings1'],
-            'warnings2': d['warnings2'],
-            'charge_energy_kwh': round(ch, 3),
-            'discharge_energy_kwh': round(dch, 3),
-            'round_trip_efficiency': round(eff, 1),
-            'estimated_cycles': round(cycles, 1),
-            'warranty_used_pct': round(warr_pct, 1),
-        }
-    print(json.dumps(out, indent=2))
-
-
 def parse_args():
     """Parse command-line arguments."""
     p = argparse.ArgumentParser(
@@ -515,8 +468,7 @@ examples:
   %(prog)s                              # auto-detect on default IP (192.168.16.254)
   %(prog)s --host 192.168.1.155         # custom BMU IP address
   %(prog)s --modules 4                  # single tower (4 modules)
-  %(prog)s --json                       # JSON output for scripts/integrations
-  %(prog)s --json | jq '.modules.BMS1'  # extract single module with jq
+  %(prog)s --towers 2 --yes             # 2 towers, skip disclaimer prompt
 """,
     )
     p.add_argument("--host", default=DEFAULT_HOST,
@@ -527,8 +479,6 @@ examples:
                    help="number of BMS modules, 0=auto-detect (default: 0)")
     p.add_argument("--towers", type=int, default=1,
                    help="number of towers for display grouping (default: 1)")
-    p.add_argument("--json", action="store_true",
-                   help="output as JSON instead of table")
     p.add_argument("--yes", "-y", action="store_true",
                    help="accept disclaimer without prompting")
     return p.parse_args()
@@ -556,18 +506,17 @@ DISCLAIMER = """\
 def main():
     args = parse_args()
 
-    if not args.json:
-        print(DISCLAIMER)
-        if not args.yes:
-            try:
-                answer = input("\n  Do you accept these terms? (yes/no): ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                print("\n  Aborted.")
-                sys.exit(0)
-            if answer != 'yes':
-                print("  You must accept the terms to use this software.")
-                sys.exit(0)
-        print()
+    print(DISCLAIMER)
+    if not args.yes:
+        try:
+            answer = input("\n  Do you accept these terms? (yes/no): ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\n  Aborted.")
+            sys.exit(0)
+        if answer != 'yes':
+            print("  You must accept the terms to use this software.")
+            sys.exit(0)
+    print()
 
     client = connect(args.host, args.port)
 
@@ -585,49 +534,39 @@ def main():
 
         # Read BMU serial number
         bmu_serial = read_bmu_serial(client)
-
-        if not args.json:
-            print_header(args.host, args.port, num_modules, bmu_serial)
+        print_header(args.host, args.port, num_modules, bmu_serial)
 
         # System summary
         summary = read_summary(client)
         if summary:
             summary['towers'] = args.towers
             summary['bmu_serial'] = bmu_serial
-        if not args.json:
-            print_summary(summary)
+        print_summary(summary)
 
         # Query all modules
         all_data = {}
         for bms_id in range(1, num_modules + 1):
-            if not args.json:
-                print(f"  Reading BMS{bms_id}...", end="\r")
+            print(f"  Reading BMS{bms_id}...", end="\r")
             data = query_module(client, bms_id)
             if data:
                 all_data[bms_id] = data
-                if not args.json:
-                    print(f"  Reading BMS{bms_id}... ✓", end="\r")
+                print(f"  Reading BMS{bms_id}... ✓", end="\r")
             else:
-                if not args.json:
-                    print(f"  Reading BMS{bms_id}... ✗ failed", end="\r")
+                print(f"  Reading BMS{bms_id}... ✗ failed", end="\r")
 
-        if args.json:
-            output_json(summary, all_data, args.towers)
-        else:
-            print()
-            print_cell_table(all_data, num_modules, args.towers)
+        print()
+        print_cell_table(all_data, num_modules, args.towers)
 
-            if all_data:
-                total_cells = sum(len(d['cell_voltages']) for d in all_data.values())
-                all_v = [v for d in all_data.values() for v in d['cell_voltages']]
-                print(f"\n  Total: {total_cells} cells, "
-                      f"global drift {max(all_v) - min(all_v)} mV "
-                      f"({min(all_v)} - {max(all_v)} mV)")
+        if all_data:
+            total_cells = sum(len(d['cell_voltages']) for d in all_data.values())
+            all_v = [v for d in all_data.values() for v in d['cell_voltages']]
+            print(f"\n  Total: {total_cells} cells, "
+                  f"global drift {max(all_v) - min(all_v)} mV "
+                  f"({min(all_v)} - {max(all_v)} mV)")
 
     finally:
         client.close()
-        if not args.json:
-            print(f"\n  Connection closed.\n")
+        print(f"\n  Connection closed.\n")
 
 
 if __name__ == "__main__":
