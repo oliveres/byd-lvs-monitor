@@ -263,7 +263,7 @@ def print_header(host, port, num_modules, bmu_serial=None):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sn = f"    SN: {bmu_serial}" if bmu_serial else ""
     print(f"\n{'═' * 122}")
-    print(f"  BYD LVS Premium — Cell Monitor    {now}    ({host}:{port}, {num_modules} modules){sn}")
+    print(f"  Battery Monitor — BYD LVS Premium    {now}    ({host}:{port}, {num_modules} modules){sn}")
     print(f"{'═' * 122}")
 
 
@@ -585,14 +585,20 @@ def main():
             if all_data:
                 total_cells = sum(len(d['cell_voltages']) for d in all_data.values())
                 all_v = [v for d in all_data.values() for v in d['cell_voltages']]
-                print(f"\n  Total: {total_cells} cells monitored, "
-                      f"global spread {max(all_v) - min(all_v)}mV "
-                      f"({min(all_v)}-{max(all_v)}mV)")
+                print(f"\n  Total: {total_cells} cells, "
+                      f"global drift {max(all_v) - min(all_v)} mV "
+                      f"({min(all_v)} - {max(all_v)} mV)")
 
     finally:
         client.close()
         if not args.json:
-            print(f"\n  Connection closed.\n")
+            print(f"\n  Connection closed.")
+            print()
+            print("  DISCLAIMER: This software is not an official diagnostic tool and is provided")
+            print("  with absolutely no warranty. The author assumes no liability for any damages")
+            print("  arising from its use, including decisions made based on its output.")
+            print("  BYD is a registered trademark of BYD Company Limited.")
+            print()
 
 
 if __name__ == "__main__":
