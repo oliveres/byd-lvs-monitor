@@ -343,6 +343,12 @@ def print_cell_table(all_data, num_modules, towers=1):
     line(hdr)
     sep()
 
+    if towers > 1:
+        t_vis = f"  Tower 1"
+        t_ansi = f"  {color('Tower 1', '1;37')}"
+        line(t_vis, t_ansi)
+        sep()
+
     for bms_id in range(1, num_modules + 1):
         d = all_data.get(bms_id)
         if not d:
@@ -392,8 +398,8 @@ def print_cell_table(all_data, num_modules, towers=1):
         line(vis1, ansi1)
 
         # Module info — line 2: electrical + energy
-        l2 = (f"SoC: {d['soc']:.1f}%  Voltage: {d['bat_voltage']:.1f}V"
-              f"  Current: {d['current']:+.1f}A  Power: {d['power']:+.0f}W"
+        l2 = (f"SoC: {d['soc']:.1f}%  Volt: {d['bat_voltage']:.1f}V"
+              f"  Curr: {d['current']:+.1f}A  Pwr: {d['power']:+.0f}W"
               f"  Temp: {d['min_temp']}-{d['max_temp']}°C"
               f"  kWh-in: {ch:.1f}  kWh-out: {dch:.1f}  η: {eff:.0f}%")
         line(f"      {l2}")
@@ -465,7 +471,16 @@ def print_cell_table(all_data, num_modules, towers=1):
             stats = f"      {bal_count:4d}"
             line(vis_parts + stats, ansi_parts + stats)
 
-        sep()
+        if bms_id < num_modules:
+            next_tower = bms_id // mods_per_tower + 1
+            if towers > 1 and next_tower > tower:
+                sep()
+                t_vis = f"  Tower {next_tower}"
+                t_ansi = f"  {color(f'Tower {next_tower}', '1;37')}"
+                line(t_vis, t_ansi)
+                sep()
+            else:
+                sep()
 
     print(f"  └{'─' * (IW + 2)}┘")
 
