@@ -43,7 +43,7 @@ SLAVE_ID = 1
 CELLS_PER_MODULE = 16       # LFP cells per module
 TEMPS_PER_MODULE = 8        # NTC sensors per module
 POLL_TIMEOUT = 10           # seconds to wait for 0x8801
-POLL_INTERVAL = 0.5         # seconds between polls
+POLL_INTERVAL = 0.25        # seconds between polls
 
 # ── Warranty & Energy Constants ───────────────────────────
 MODULE_USABLE_KWH = 3.6    # usable capacity per cycle (4.0 kWh × 0.9, min SOC ~10%)
@@ -165,7 +165,7 @@ def query_module(client, bms_id):
     # Step 3: Read 4 chunks of 65 registers from FIFO buffer
     r = []
     for chunk in range(BMS_DATA_CHUNKS):
-        time.sleep(0.2)
+        time.sleep(0.1)
         result = client.read_holding_registers(REG_BMS_DATA, BMS_CHUNK_SIZE, slave=SLAVE_ID)
         if result.isError():
             r.extend([0] * BMS_CHUNK_SIZE)
@@ -328,7 +328,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
     # Header
     title = f"Tower {tower_num}" if towers > 1 else ""
     print(f"\n  ┌{'─' * (IW + 2)}┐")
-    hdr = "     "
+    hdr = "    "
     for i in range(1, CELLS_PER_MODULE + 1):
         hdr += f"{'C' + str(i):>{CW}s}"
     hdr += "    Avg  Drift"
