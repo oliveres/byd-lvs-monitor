@@ -4,7 +4,7 @@ Cell-level monitoring for BYD Battery-Box Premium LVS (and HVS/HVM) systems via 
 
 Reads individual cell voltages, temperatures, SOC/SOH, balancing status and error flags from all BMS modules — the same data visible in the BYD BE Connect Plus service application.
 
-![Terminal output](images/screenshot.png)
+![Terminal output](images/screenshot.svg)
 
 ## Features
 
@@ -37,6 +37,10 @@ Reads individual cell voltages, temperatures, SOC/SOH, balancing status and erro
 ```bash
 git clone https://github.com/oliveres/byd-lvs-monitor.git
 cd byd-lvs-monitor
+
+# Install dependencies (use venv on newer Debian/Raspberry Pi OS)
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
 # Run with default IP (192.168.16.254)
