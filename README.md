@@ -8,43 +8,52 @@ Reads individual cell voltages, temperatures, SOC/SOH, balancing status and erro
 
 ## Features
 
-- **128 cell voltages** (8 modules × 16 LFP cells) with color-coded min/max highlighting
-- **64 temperature sensors** (8 per module) with hot/cold coloring
-- **Live balancing detection** — shows which cells are currently being balanced
-- **Per-module SOC/SOH/current/power** overview
-- **Auto-detection** of module count from BMU
-- **JSON output** for integration with scripts, Node-RED, InfluxDB, Grafana
+- **Cell voltages** per module (16 LFP cells) with color-coded outlier detection
+  - Cyan = lowest cell (≥5 mV below second lowest)
+  - Red = highest cell (≥5 mV above second highest)
+  - Orange = cell currently being balanced
+- **Temperature sensors** (8 per module) with outlier coloring
+  - Light blue = coldest sensor (≥2°C below second coldest)
+  - Red = hottest sensor (≥2°C above second hottest)
+- **Per-module overview**: SOC, SOH, voltage, current, power, temperature range
+- **Energy tracking**: lifetime kWh charged/discharged, round-trip efficiency (η)
+- **Cycle counting** based on discharge energy and usable module capacity
+- **Warranty remaining** percentage based on BYD LVS warranty throughput tables
+- **BMU and module serial numbers** read from Modbus registers
+- **Auto-detection** of module count from BMU configuration register
+- **Multi-tower support** with separate tables per tower
+- **Disclaimer prompt** with `--yes` bypass for scripted usage
 - **No cloud, no account** — direct LAN connection to your battery
 
 ## Requirements
 
 - Python 3.8+
-- [pymodbus](https://pypi.org/project/pymodbus/) (`pip install pymodbus`)
+- [pymodbus](https://pypi.org/project/pymodbus/) ≥3.5
 - BYD Battery-Box connected via Ethernet (LAN cable to BMU)
 - No other application connected to the battery (BE Connect, Node-RED, etc.)
 
 ## Quick Start
 
 ```bash
-# Install
-git clone https://github.com/oliveres/byd-battery-monitor.git
-cd byd-battery-monitor
-pip install pymodbus
+git clone https://github.com/oliveres/byd-lvs-monitor.git
+cd byd-lvs-monitor
+pip install -r requirements.txt
 
-# Run (default IP 192.168.16.254)
+# Run with default IP (192.168.16.254)
 python3 byd_lvs_monitor.py
 
-# Custom IP (e.g. DHCP-assigned)
+# Custom BMU IP address
 python3 byd_lvs_monitor.py --host 192.168.1.155
 
-# Single tower only
-python3 byd_lvs_monitor.py --host 192.168.1.155 --modules 4
+# Two towers (8 modules), skip disclaimer
+python3 byd_lvs_monitor.py --host 192.168.1.155 --towers 2 --yes
 ```
 
 ## Usage
 
 ```
-usage: byd_lvs_monitor.py [-h] [--host HOST] [--port PORT] [--modules MODULES] [--json]
+usage: byd_lvs_monitor.py [-h] [--host HOST] [--port PORT] [--modules MODULES]
+                           [--towers TOWERS] [--yes]
 
 BYD Battery-Box LVS/HVS/HVM cell-level monitor
 
@@ -53,80 +62,17 @@ options:
   --host HOST        BMU IP address (default: 192.168.16.254)
   --port PORT        BMU TCP port (default: 8080)
   --modules MODULES  number of BMS modules, 0=auto-detect (default: 0)
-  --json             output as JSON instead of table
+  --towers TOWERS    number of towers for display grouping (default: 1)
+  --yes, -y          accept disclaimer without prompting
 ```
 
-### JSON Output
-
-```bash
-# Full JSON dump
-python3 byd_lvs_monitor.py --host 192.168.1.155 --json
-
-# Single module with jq
-python3 byd_lvs_monitor.py --json | jq '.modules.BMS1.cell_voltages'
-
-# Periodic logging to file
-while true; do
-  python3 byd_lvs_monitor.py --json >> battery_log.jsonl
-  sleep 60
-done
-```
-
-JSON structure:
-```json
-{
-  "timestamp": "2026-02-19T18:04:57",
-  "summary": {
-    "soc": 62, "soh": 98, "pack_voltage": 54.0,
-    "current": -179.7, "max_temp": 30, "min_temp": 25
-  },
-  "modules": {
-    "BMS1": {
-      "soc": 93.2, "soh": 98,
-      "bat_voltage": 54.0, "current": -23.1,
-      "cell_voltages": [3382, 3381, 3379, ...],
-      "cell_temps": [28, 28, 28, 27, 28, 29, 30],
-      "balancing": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      "balancing_active": 0,
-      "errors": 0, "warnings1": 0
-    }
-  }
-}
-```
-
-## Output Example
-
-```
-═══════════════════════════════════════════════════════════════════════════
-  BYD LVS Premium — Cell Monitor    2026-02-19 18:04:57    (192.168.1.155:8080, 8 modules)
-═══════════════════════════════════════════════════════════════════════════
-
-  ┌────────────────────────────────────────────────────────────────────┐
-  │  SOC:  62%   SOH:  98%   Pack:  54.00V   Current:  -179.7A       │
-  │  Cell V: 3.38V - 3.37V   Temp: 25°C - 30°C                      │
-  └────────────────────────────────────────────────────────────────────┘
-
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │        C1   C2   C3   C4   C5   C6  ...  C16   Avg   Δ            │
-  ├──────────────────────────────────────────────────────────────────────┤
-  │ BMS1 T1M1  SOC=93.2%  SOH=98%  54.0V  -23.1A  -1252W  27-30°C    │
-  │   mV 3382 3381 3379 3381 3379 3380 ... 3381  3381   4             │
-  │   °C   28   28   28   27   28   29 ...    ·    28   3             │
-  ├──────────────────────────────────────────────────────────────────────┤
-  │ ...                                                                 │
-  ├──────────────────────────────────────────────────────────────────────┤
-  │ TOTAL  mV: avg=3381  range=3376-3385  Δ=9mV                       │
-  │        °C: avg=27  range=25-30  Δ=5°C                              │
-  └──────────────────────────────────────────────────────────────────────┘
-```
-
-When cells are balancing, an additional row appears:
-```
-  │ BMS4 T1M4  SOC=98.2%  SOH=98%  54.2V  -2.1A  -114W  24-26°C  ⚡BAL:3  │
-  │   mV 3395 3394 3412 3394 3395 3410 ...                                  │
-  │   °C   25   25   25   24   25   26 ...                                  │
-  │  BAL    ·    ·    ●    ·    ·    ●    ·    ·    ·    ·    ·    ●    ·  3 │
-```
+| Argument | Description |
+|----------|-------------|
+| `--host` | BMU IP address. Default `192.168.16.254` (factory). Use your DHCP-assigned IP if different. |
+| `--port` | Modbus TCP port. Default `8080`. |
+| `--modules` | Override auto-detected module count. `0` = auto-detect from BMU. |
+| `--towers` | Number of battery towers. Controls table grouping (e.g. `--towers 2` for 8 modules = 4 per tower). |
+| `--yes` / `-y` | Skip the disclaimer confirmation prompt. Useful for cron jobs or scripts. |
 
 ## How It Works
 
@@ -138,9 +84,9 @@ is not available through standard register reads — it requires a three-step pr
 3. **Read** 65 registers from `0x0558` four times (FIFO buffer, 260 registers total)
 
 The response contains cell voltages (16 × mV), temperatures (8 × °C), SOC, SOH,
-current, balancing flags, warnings and errors.
+current, balancing flags, lifetime energy counters, serial number, warnings and errors.
 
-For full protocol details see [BYD_LVS_Premium_Modbus_Protocol.md](BYD_LVS_Premium_Modbus_Protocol.md).
+For full protocol details see [MODBUS.md](MODBUS.md).
 
 ## Network Setup
 
@@ -164,14 +110,14 @@ DHCP leases for the BMU's assigned address. You can verify connectivity by openi
 
 | System | Modules | Cells | Status |
 |--------|---------|-------|--------|
-| BYD LVS Premium 32 kWh (2 towers × 4 modules) | 8 | 128 | ✅ Verified |
+| BYD LVS Premium 32 kWh (2 towers × 4 modules) | 8 | 128 | Verified |
 
 The protocol should also work with HVS and HVM systems (same BMU firmware),
 but cell count and temperature layout may differ. Contributions welcome!
 
 ## Compatibility
 
-- **pymodbus 3.5–3.12+**: Automatic framer import detection
+- **pymodbus 3.5+**: Automatic framer import detection (supports 3.5 through 3.12+)
 - **Python 3.8+**: No external dependencies beyond pymodbus
 - **Tested on**: Raspberry Pi OS (arm64), Ubuntu 24.04, macOS
 
@@ -182,14 +128,34 @@ but cell count and temperature layout may differ. Contributions welcome!
 - The script performs **read-only** operations. It cannot change battery configuration.
 - WiFi connection to BMU times out after a few minutes. Use **LAN cable** for reliable access.
 
+## Disclaimer
+
+The software displays this disclaimer on startup that must be accepted before proceeding.
+Use `--yes` to bypass the prompt for non-interactive use.
+
+> **DISCLAIMER**
+>
+> This software is NOT an official BYD diagnostic tool.
+> It is provided "AS IS" without warranty of any kind.
+>
+> By using this software, you acknowledge and agree that:
+> - The author assumes NO liability for any damages whatsoever
+> - You waive all claims for compensation arising from its use
+> - You accept full responsibility for any decisions made based
+>   on information provided by this software
+> - Incorrect readings may occur due to communication errors
+>   or firmware differences
+>
+> BYD and Battery-Box are registered trademarks of BYD Company Limited.
+
 ## Related Projects
 
 | Project | Description |
 |---------|-------------|
 | [redpomodoro/byd_battery_box](https://github.com/redpomodoro/byd_battery_box) | Home Assistant integration (protocol source) |
-| [sarnau/BYD-Battery-Box-Infos](https://github.com/sarnau/BYD-Battery-Box-Infos) | Original reverse engineering, event codes |
+| [sarnau/BYD-Battery-Box-Infos](https://github.com/sarnau/BYD-Battery-Box-Infos) | Modbus protocol documentation, event codes |
 | [christianh17/ioBroker.bydhvs](https://github.com/christianh17/ioBroker.bydhvs) | ioBroker adapter |
 
 ## License
 
-MIT
+[MIT](LICENSE)

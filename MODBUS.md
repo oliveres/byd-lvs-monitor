@@ -176,7 +176,9 @@ bms_id 9+ returns no response.
 | 28 | UINT16 | bitmask | Warnings group 1 |
 | 29 | UINT16 | bitmask | Warnings group 2 |
 | 30 | UINT16 | bitmask | Warnings group 3 |
-| 31–47 | — | — | Static config / serial number data |
+| 31–33 | — | — | Static config data |
+| **34–45** | **ASCII** | **packed** | **Module serial number (12 regs = 24 bytes, hi/lo byte = 2 chars)** |
+| 46–47 | — | — | Reserved |
 | 48 | UINT16 | bitmask | Error flags |
 | **49–64** | **INT16** | **1** | **16 cell voltages (mV)** |
 
@@ -315,6 +317,22 @@ for bms_id in range(1, 9):
 client.close()
 ```
 
+### 4.7 Module Serial Number (Registers 34–45)
+
+Each BMS module reports its serial number in registers 34–45 of the cell data response
+(12 registers = 24 bytes of ASCII, packed as hi/lo byte pairs):
+
+```python
+serial = ""
+for i in range(34, 46):
+    ch1 = (r[i] >> 8) & 0xFF
+    ch2 = r[i] & 0xFF
+    if 32 <= ch1 < 127: serial += chr(ch1)
+    if 32 <= ch2 < 127: serial += chr(ch2)
+serial = serial.rstrip('x \x00')
+# Example: "P011T010Z2305150689"
+```
+
 ---
 
 ## 5. Configuration Registers (0x0000–0x0066) — Read Only
@@ -326,13 +344,20 @@ Readable with a single `read_holding_registers(0x0000, 0x66, slave=1)`.
 |----------|-------------|
 | 0x0000–0x0009 | Serial number (ASCII packed in UINT16) |
 | 0x000F | Working area: hi=BMU, lo=BMS |
-| 0x0010 | hi=inverter type, bits[7:4]=BMS qty |
+| 0x0010 | hi=inverter type, lo nibble (bits[3:0])=BMS module count |
 | 0x0011 | hi=application, lo=battery type |
 | 0x0012 | hi=phase config |
 | 0x004B | Address |
 | 0x004C | BMU MCU type |
 | 0x004D | BMS MCU type |
 | 0x0063–0x0065 | Date/time (packed: year+2000, month, day, hour, min, sec) |
+
+### Module count auto-detection
+
+```python
+result = client.read_holding_registers(0x0010, 1, slave=1)
+module_count = result.registers[0] & 0x0F  # low nibble = number of BMS modules
+```
 
 **Warning:** Do not write to 0x0010–0x0012. These control hardware configuration
 and incorrect values could damage the system.
@@ -528,7 +553,7 @@ All values verified against BE Connect Plus v2.9 on 2026-02-19:
 
 | Repository | Description |
 |------------|-------------|
-| [sarnau/BYD-Battery-Box-Infos](https://github.com/sarnau/BYD-Battery-Box-Infos) | Original Modbus reverse engineering, Python reference |
+| [sarnau/BYD-Battery-Box-Infos](https://github.com/sarnau/BYD-Battery-Box-Infos) | Modbus protocol documentation, Python reference |
 | [redpomodoro/byd_battery_box](https://github.com/redpomodoro/byd_battery_box) | Home Assistant integration (cell-level protocol source) |
 | [christianh17/ioBroker.bydhvs](https://github.com/christianh17/ioBroker.bydhvs) | ioBroker adapter, hex structure docs |
 | [dfch/BydCanProtocol](https://github.com/dfch/BydCanProtocol) | CAN bus protocol (Victron ↔ BMU) |
