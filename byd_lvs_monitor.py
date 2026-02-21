@@ -331,9 +331,6 @@ def print_cell_table(all_data, num_modules, towers=1):
             text_ansi = text_vis
         print(f"  │ {rpad(text_vis, text_ansi, IW)} │")
 
-    def blank():
-        print(f"  │ {' ' * IW} │")
-
     def sep():
         print(f"  ├{'─' * (IW + 2)}┤")
 
@@ -401,8 +398,9 @@ def print_cell_table(all_data, num_modules, towers=1):
               f"  kWh-in: {ch:.1f}  kWh-out: {dch:.1f}  η: {eff:.0f}%")
         line(f"      {l2}")
 
-        # Empty line between info and data
-        blank()
+        # Dashed separator between info and data (gray, not connected to borders)
+        dashes = "-" * (IW - 1)
+        line(dashes, color(dashes, '90'))
 
         # Voltage row
         vis_parts = "   mV  "
@@ -468,18 +466,6 @@ def print_cell_table(all_data, num_modules, towers=1):
             line(vis_parts + stats, ansi_parts + stats)
 
         sep()
-
-    # Global summary
-    total_bal = sum(d.get('balancing_active', 0) for d in all_data.values())
-    if all_v:
-        g_avg = sum(all_v) / len(all_v)
-        bal_str = f"  BAL: {total_bal} cells" if total_bal > 0 else ""
-        txt = f"TOTAL  mV: avg={g_avg:.0f}  range={g_v_min}-{g_v_max}  Δ={g_v_max - g_v_min}mV{bal_str}"
-        line(txt)
-    if all_t:
-        g_t_avg = sum(all_t) / len(all_t)
-        txt = f"       °C: avg={g_t_avg:.0f}  range={g_t_min}-{g_t_max}  Δ={g_t_max - g_t_min}°C"
-        line(txt)
 
     print(f"  └{'─' * (IW + 2)}┘")
 
@@ -587,13 +573,6 @@ def main():
 
         print()
         print_cell_table(all_data, num_modules, args.towers)
-
-        if all_data:
-            total_cells = sum(len(d['cell_voltages']) for d in all_data.values())
-            all_v = [v for d in all_data.values() for v in d['cell_voltages']]
-            print(f"\n  Total: {total_cells} cells, "
-                  f"global drift {max(all_v) - min(all_v)} mV "
-                  f"({min(all_v)} - {max(all_v)} mV)")
 
     finally:
         client.close()
