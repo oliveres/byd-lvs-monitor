@@ -393,8 +393,11 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         dashes = "-" * (IW - 1)
         line(dashes, color(dashes, '90'))
 
-        # Voltage row
+        # Voltage row — outlier detection against second nearest value
         bal = d.get('balancing', [])
+        unique_v = sorted(set(cv))
+        v_min_outlier = (unique_v[1] - unique_v[0] >= 5) if len(unique_v) > 1 else False
+        v_max_outlier = (unique_v[-1] - unique_v[-2] >= 5) if len(unique_v) > 1 else False
         vis_parts = " mV  "
         ansi_parts = " mV  "
         for ci, v in enumerate(cv):
@@ -402,28 +405,30 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
             is_bal = ci < len(bal) and bal[ci]
             if is_bal:
                 ansi_parts += color(f"{v:{CW}d}", '1;33')  # orange = balancing
-            elif v == cv_min and cv_spread >= 5:
-                ansi_parts += color(f"{v:{CW}d}", '1;36')  # cyan = lowest
-            elif v == cv_max and cv_spread >= 5:
-                ansi_parts += color(f"{v:{CW}d}", '1;31')  # red = highest
+            elif v == cv_min and v_min_outlier:
+                ansi_parts += color(f"{v:{CW}d}", '1;36')  # cyan = lowest outlier
+            elif v == cv_max and v_max_outlier:
+                ansi_parts += color(f"{v:{CW}d}", '1;31')  # red = highest outlier
             else:
                 ansi_parts += cell_str
             vis_parts += cell_str
         stats = f"  {cv_avg:5.0f} {cv_spread:4d} mV"
         line(vis_parts + stats, ansi_parts + stats)
 
-        # Temperature row
-        ct_spread = ct_max - ct_min if ct_valid else 0
+        # Temperature row — outlier detection against second nearest value
+        unique_t = sorted(set(ct_valid)) if ct_valid else []
+        t_min_outlier = (unique_t[1] - unique_t[0] >= 2) if len(unique_t) > 1 else False
+        t_max_outlier = (unique_t[-1] - unique_t[-2] >= 2) if len(unique_t) > 1 else False
         vis_parts = " °C  "
         ansi_parts = " °C  "
         for i in range(CELLS_PER_MODULE):
             if i < len(ct) and ct[i] > 0:
                 t = ct[i]
                 cell_str = f"{t:{CW}d}"
-                if t == ct_max and ct_spread >= 2:
-                    ansi_parts += color(f"{t:{CW}d}", '1;31')  # red = highest
-                elif t == ct_min and ct_spread >= 2:
-                    ansi_parts += color(f"{t:{CW}d}", '1;34')  # light blue = lowest
+                if t == ct_max and t_max_outlier:
+                    ansi_parts += color(f"{t:{CW}d}", '1;31')  # red = highest outlier
+                elif t == ct_min and t_min_outlier:
+                    ansi_parts += color(f"{t:{CW}d}", '1;34')  # light blue = lowest outlier
                 else:
                     ansi_parts += cell_str
                 vis_parts += cell_str
