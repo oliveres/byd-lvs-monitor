@@ -308,13 +308,6 @@ def print_summary(summary, host=None, port=None, bmu_serial=None):
 
 def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
     """Print cell table for a single tower (or all modules if towers=1)."""
-    all_v = [v for d in tower_data.values() for v in d['cell_voltages']]
-    g_v_min = min(all_v) if all_v else 0
-    g_v_max = max(all_v) if all_v else 0
-
-    all_t = [t for d in tower_data.values() for t in d.get('cell_temps', []) if t > 0]
-    g_t_min = min(all_t) if all_t else 0
-    g_t_max = max(all_t) if all_t else 0
 
     # Warranty calculation
     warranty_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000
@@ -401,18 +394,18 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         line(dashes, color(dashes, '90'))
 
         # Voltage row
+        bal = d.get('balancing', [])
         vis_parts = " mV  "
         ansi_parts = " mV  "
-        for v in cv:
+        for ci, v in enumerate(cv):
             cell_str = f"{v:{CW}d}"
-            if v == g_v_max:
-                ansi_parts += color(f"{v:{CW}d}", '1;32')
-            elif v == g_v_min:
-                ansi_parts += color(f"{v:{CW}d}", '1;31')
-            elif v == cv_max and cv_spread > 2:
-                ansi_parts += color(f"{v:{CW}d}", '92')
-            elif v == cv_min and cv_spread > 2:
-                ansi_parts += color(f"{v:{CW}d}", '91')
+            is_bal = ci < len(bal) and bal[ci]
+            if is_bal:
+                ansi_parts += color(f"{v:{CW}d}", '1;33')  # orange = balancing
+            elif v == cv_min and cv_spread >= 5:
+                ansi_parts += color(f"{v:{CW}d}", '1;36')  # cyan = lowest
+            elif v == cv_max and cv_spread >= 5:
+                ansi_parts += color(f"{v:{CW}d}", '1;31')  # red = highest
             else:
                 ansi_parts += cell_str
             vis_parts += cell_str
@@ -420,20 +413,17 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         line(vis_parts + stats, ansi_parts + stats)
 
         # Temperature row
+        ct_spread = ct_max - ct_min if ct_valid else 0
         vis_parts = " °C  "
         ansi_parts = " °C  "
         for i in range(CELLS_PER_MODULE):
             if i < len(ct) and ct[i] > 0:
                 t = ct[i]
                 cell_str = f"{t:{CW}d}"
-                if t == g_t_max:
-                    ansi_parts += color(f"{t:{CW}d}", '1;31')
-                elif t == g_t_min:
-                    ansi_parts += color(f"{t:{CW}d}", '1;34')
-                elif t == ct_max and ct_max > ct_min:
-                    ansi_parts += color(f"{t:{CW}d}", '91')
-                elif t == ct_min and ct_max > ct_min:
-                    ansi_parts += color(f"{t:{CW}d}", '94')
+                if t == ct_max and ct_spread >= 2:
+                    ansi_parts += color(f"{t:{CW}d}", '1;31')  # red = highest
+                elif t == ct_min and ct_spread >= 2:
+                    ansi_parts += color(f"{t:{CW}d}", '1;34')  # light blue = lowest
                 else:
                     ansi_parts += cell_str
                 vis_parts += cell_str
@@ -446,22 +436,6 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         else:
             stats = ""
         line(vis_parts + stats, ansi_parts + stats)
-
-        # Balancing row (only when active)
-        bal = d.get('balancing', [])
-        bal_count = d.get('balancing_active', 0)
-        if bal_count > 0:
-            vis_parts = "BAL  "
-            ansi_parts = "BAL  "
-            for i in range(CELLS_PER_MODULE):
-                if i < len(bal) and bal[i]:
-                    vis_parts += f"{'●':>{CW}s}"
-                    ansi_parts += color(f"{'●':>{CW}s}", '1;33')
-                else:
-                    vis_parts += f"{'·':>{CW}s}"
-                    ansi_parts += f"{'·':>{CW}s}"
-            stats = f"      {bal_count:4d}"
-            line(vis_parts + stats, ansi_parts + stats)
 
         if idx < len(bms_ids) - 1:
             sep()
