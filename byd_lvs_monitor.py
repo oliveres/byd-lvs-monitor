@@ -328,7 +328,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
     # Header
     title = f"Tower {tower_num}" if towers > 1 else ""
     print(f"\n  ┌{'─' * (IW + 2)}┐")
-    hdr = "   "
+    hdr = "     "
     for i in range(1, CELLS_PER_MODULE + 1):
         hdr += f"{'C' + str(i):>{CW}s}"
     hdr += "    Avg  Drift"
