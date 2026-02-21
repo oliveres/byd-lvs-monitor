@@ -401,8 +401,8 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         line(dashes, color(dashes, '90'))
 
         # Voltage row
-        vis_parts = " mV    "
-        ansi_parts = " mV    "
+        vis_parts = " mV  "
+        ansi_parts = " mV  "
         for v in cv:
             cell_str = f"{v:{CW}d}"
             if v == g_v_max:
@@ -420,8 +420,8 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         line(vis_parts + stats, ansi_parts + stats)
 
         # Temperature row
-        vis_parts = " °C    "
-        ansi_parts = " °C    "
+        vis_parts = " °C  "
+        ansi_parts = " °C  "
         for i in range(CELLS_PER_MODULE):
             if i < len(ct) and ct[i] > 0:
                 t = ct[i]
@@ -451,8 +451,8 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         bal = d.get('balancing', [])
         bal_count = d.get('balancing_active', 0)
         if bal_count > 0:
-            vis_parts = "BAL    "
-            ansi_parts = "BAL    "
+            vis_parts = "BAL  "
+            ansi_parts = "BAL  "
             for i in range(CELLS_PER_MODULE):
                 if i < len(bal) and bal[i]:
                     vis_parts += f"{'●':>{CW}s}"
@@ -570,7 +570,7 @@ def main():
             failed = []
             print()
             for i, bms_id in enumerate(range(start_bms, end_bms), 1):
-                print(f"  Reading BMS {i} of {mods_per_tower}...", end="\r")
+                print(f"  Reading BMS{bms_id} ({i} of {mods_per_tower})...", end="\r")
                 data = query_module(client, bms_id)
                 if data:
                     tower_data[bms_id] = data
@@ -579,7 +579,7 @@ def main():
             if failed:
                 print(f"  Reading BMS ... ✗ failed: {failed}")
             else:
-                print(f"  Reading BMS {mods_per_tower} of {mods_per_tower}... ✓")
+                print(f"  Reading BMS{end_bms - 1} ({mods_per_tower} of {mods_per_tower})... {color('✓', '1;32')}")
             print_tower_table(tower_data, t + 1, mods_per_tower, towers)
 
     finally:
