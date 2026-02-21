@@ -335,7 +335,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
     # Header
     title = f"  Tower {tower_num}" if towers > 1 else ""
     print(f"\n  ┌{'─' * (IW + 2)}┐")
-    hdr = "        "
+    hdr = "      "
     for i in range(1, CELLS_PER_MODULE + 1):
         hdr += f"{'C' + str(i):>{CW}s}"
     hdr += "    Avg  Drift"
@@ -380,13 +380,13 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
 
         l1 = (f"Module {mod}{sn_str}"
               f"  State: {state}  {bal_tag}  Cycles: ~{cycles:.0f}"
-              f"  SoH={d['soh']}%  Warranty: {warr_pct:.1f}%")
+              f"  SoH={d['soh']}%  Warranty rem: {warr_pct:.1f}%")
         vis1 = f"BMS{bms_id}  {l1}"
         ansi_state = color(state, '1;31') if state != "OK" else color(state, '1;32')
         ansi_bal = color(f'Balancing: {bal_count}', '1;33') if bal_count > 0 else "Balancing: OFF"
         ansi1 = (f"{color(f'BMS{bms_id}', '1;37')}  Module {mod}{sn_str}"
                  f"  State: {ansi_state}  {ansi_bal}  Cycles: ~{cycles:.0f}"
-                 f"  SoH={d['soh']}%  Warranty: {warr_pct:.1f}%")
+                 f"  SoH={d['soh']}%  Warranty rem: {warr_pct:.1f}%")
         line(vis1, ansi1)
 
         # Module info — line 2: electrical + energy
@@ -401,8 +401,8 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         line(dashes, color(dashes, '90'))
 
         # Voltage row
-        vis_parts = "   mV  "
-        ansi_parts = "   mV  "
+        vis_parts = " mV    "
+        ansi_parts = " mV    "
         for v in cv:
             cell_str = f"{v:{CW}d}"
             if v == g_v_max:
@@ -420,8 +420,8 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         line(vis_parts + stats, ansi_parts + stats)
 
         # Temperature row
-        vis_parts = "   °C  "
-        ansi_parts = "   °C  "
+        vis_parts = " °C    "
+        ansi_parts = " °C    "
         for i in range(CELLS_PER_MODULE):
             if i < len(ct) and ct[i] > 0:
                 t = ct[i]
@@ -451,8 +451,8 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         bal = d.get('balancing', [])
         bal_count = d.get('balancing_active', 0)
         if bal_count > 0:
-            vis_parts = "  BAL  "
-            ansi_parts = "  BAL  "
+            vis_parts = "BAL    "
+            ansi_parts = "BAL    "
             for i in range(CELLS_PER_MODULE):
                 if i < len(bal) and bal[i]:
                     vis_parts += f"{'●':>{CW}s}"
@@ -567,16 +567,19 @@ def main():
             tower_data = {}
             start_bms = t * mods_per_tower + 1
             end_bms = start_bms + mods_per_tower
-            for bms_id in range(start_bms, end_bms):
-                print(f"  Reading BMS{bms_id}...", end="\r")
+            failed = []
+            print()
+            for i, bms_id in enumerate(range(start_bms, end_bms), 1):
+                print(f"  Reading BMS {i} of {mods_per_tower}...", end="\r")
                 data = query_module(client, bms_id)
                 if data:
                     tower_data[bms_id] = data
-                    print(f"  Reading BMS{bms_id}... ✓", end="\r")
                 else:
-                    print(f"  Reading BMS{bms_id}... ✗ failed", end="\r")
-
-            print()
+                    failed.append(bms_id)
+            if failed:
+                print(f"  Reading BMS ... ✗ failed: {failed}")
+            else:
+                print(f"  Reading BMS {mods_per_tower} of {mods_per_tower}... ✓")
             print_tower_table(tower_data, t + 1, mods_per_tower, towers)
 
     finally:
