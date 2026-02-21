@@ -306,21 +306,19 @@ def print_summary(summary, host=None, port=None, bmu_serial=None):
     print(f"  └{'─' * SW}┘")
 
 
-def print_cell_table(all_data, num_modules, towers=1):
-    """Print combined cell voltage + temperature + balancing + energy table."""
-    all_v = [v for d in all_data.values() for v in d['cell_voltages']]
+def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
+    """Print cell table for a single tower (or all modules if towers=1)."""
+    all_v = [v for d in tower_data.values() for v in d['cell_voltages']]
     g_v_min = min(all_v) if all_v else 0
     g_v_max = max(all_v) if all_v else 0
 
-    all_t = [t for d in all_data.values() for t in d.get('cell_temps', []) if t > 0]
+    all_t = [t for d in tower_data.values() for t in d.get('cell_temps', []) if t > 0]
     g_t_min = min(all_t) if all_t else 0
     g_t_max = max(all_t) if all_t else 0
 
     # Warranty calculation
-    mods_per_tower = num_modules // towers if towers > 1 else num_modules
-    warranty_per_tower_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000
-    sys_warr_kwh = warranty_per_tower_kwh * towers
-    mod_warranty_kwh = sys_warr_kwh / num_modules if sys_warr_kwh > 0 else 0
+    warranty_kwh = WARRANTY_MWH.get(mods_per_tower, 0) * 1000
+    mod_warranty_kwh = warranty_kwh / mods_per_tower if warranty_kwh > 0 else 0
 
     # Fixed inner width (border = IW+2, matching summary box)
     IW = 118
@@ -335,26 +333,21 @@ def print_cell_table(all_data, num_modules, towers=1):
         print(f"  ├{'─' * (IW + 2)}┤")
 
     # Header
+    title = f"  Tower {tower_num}" if towers > 1 else ""
     print(f"\n  ┌{'─' * (IW + 2)}┐")
     hdr = "        "
     for i in range(1, CELLS_PER_MODULE + 1):
         hdr += f"{'C' + str(i):>{CW}s}"
     hdr += "    Avg  Drift"
     line(hdr)
+    if title:
+        sep()
+        line(title, f"  {color(f'Tower {tower_num}', '1;37')}")
     sep()
 
-    if towers > 1:
-        t_vis = f"  Tower 1"
-        t_ansi = f"  {color('Tower 1', '1;37')}"
-        line(t_vis, t_ansi)
-        sep()
-
-    for bms_id in range(1, num_modules + 1):
-        d = all_data.get(bms_id)
-        if not d:
-            line(f"BMS{bms_id}  — no response —")
-            sep()
-            continue
+    bms_ids = sorted(tower_data.keys())
+    for idx, bms_id in enumerate(bms_ids):
+        d = tower_data[bms_id]
 
         cv = d['cell_voltages']
         cv_min, cv_max = min(cv), max(cv)
@@ -367,7 +360,6 @@ def print_cell_table(all_data, num_modules, towers=1):
         ct_max = max(ct_valid) if ct_valid else 0
 
         # Module info — line 1: identity, state, cycles, SoH, warranty
-        tower = (bms_id - 1) // mods_per_tower + 1
         mod = (bms_id - 1) % mods_per_tower + 1
         sn = d.get('serial') or ''
         sn_str = f"  SN:{sn}" if sn else ""
@@ -386,13 +378,13 @@ def print_cell_table(all_data, num_modules, towers=1):
         eff = (dch / ch * 100) if ch > 0 else 0
         warr_pct = (dch / mod_warranty_kwh * 100) if mod_warranty_kwh > 0 else 0
 
-        l1 = (f"Tower {tower}  Module {mod}{sn_str}"
+        l1 = (f"Module {mod}{sn_str}"
               f"  State: {state}  {bal_tag}  Cycles: ~{cycles:.0f}"
               f"  SoH={d['soh']}%  Warranty: {warr_pct:.1f}%")
         vis1 = f"BMS{bms_id}  {l1}"
         ansi_state = color(state, '1;31') if state != "OK" else color(state, '1;32')
         ansi_bal = color(f'Balancing: {bal_count}', '1;33') if bal_count > 0 else "Balancing: OFF"
-        ansi1 = (f"{color(f'BMS{bms_id}', '1;37')}  Tower {tower}  Module {mod}{sn_str}"
+        ansi1 = (f"{color(f'BMS{bms_id}', '1;37')}  Module {mod}{sn_str}"
                  f"  State: {ansi_state}  {ansi_bal}  Cycles: ~{cycles:.0f}"
                  f"  SoH={d['soh']}%  Warranty: {warr_pct:.1f}%")
         line(vis1, ansi1)
@@ -471,16 +463,8 @@ def print_cell_table(all_data, num_modules, towers=1):
             stats = f"      {bal_count:4d}"
             line(vis_parts + stats, ansi_parts + stats)
 
-        if bms_id < num_modules:
-            next_tower = bms_id // mods_per_tower + 1
-            if towers > 1 and next_tower > tower:
-                sep()
-                t_vis = f"  Tower {next_tower}"
-                t_ansi = f"  {color(f'Tower {next_tower}', '1;37')}"
-                line(t_vis, t_ansi)
-                sep()
-            else:
-                sep()
+        if idx < len(bms_ids) - 1:
+            sep()
 
     print(f"  └{'─' * (IW + 2)}┘")
 
@@ -575,19 +559,25 @@ def main():
             summary['_num_modules'] = num_modules
         print_summary(summary, args.host, args.port, bmu_serial)
 
-        # Query all modules
-        all_data = {}
-        for bms_id in range(1, num_modules + 1):
-            print(f"  Reading BMS{bms_id}...", end="\r")
-            data = query_module(client, bms_id)
-            if data:
-                all_data[bms_id] = data
-                print(f"  Reading BMS{bms_id}... ✓", end="\r")
-            else:
-                print(f"  Reading BMS{bms_id}... ✗ failed", end="\r")
+        # Query and print per tower
+        towers = args.towers
+        mods_per_tower = num_modules // towers if towers > 1 else num_modules
 
-        print()
-        print_cell_table(all_data, num_modules, args.towers)
+        for t in range(towers):
+            tower_data = {}
+            start_bms = t * mods_per_tower + 1
+            end_bms = start_bms + mods_per_tower
+            for bms_id in range(start_bms, end_bms):
+                print(f"  Reading BMS{bms_id}...", end="\r")
+                data = query_module(client, bms_id)
+                if data:
+                    tower_data[bms_id] = data
+                    print(f"  Reading BMS{bms_id}... ✓", end="\r")
+                else:
+                    print(f"  Reading BMS{bms_id}... ✗ failed", end="\r")
+
+            print()
+            print_tower_table(tower_data, t + 1, mods_per_tower, towers)
 
     finally:
         client.close()
