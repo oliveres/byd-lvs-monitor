@@ -28,7 +28,7 @@ Reads individual cell voltages, temperatures, SOC/SOH, balancing status and erro
 ## Requirements
 
 - Python 3.8+
-- [pymodbus](https://pypi.org/project/pymodbus/) ≥3.5
+- [pymodbus](https://pypi.org/project/pymodbus/) ≥3.10
 - BYD Battery-Box connected via Ethernet (LAN cable to BMU)
 - No other application connected to the battery (BE Connect, Node-RED, etc.)
 
@@ -67,7 +67,7 @@ options:
   --port PORT        BMU TCP port (default: 8080)
   --modules MODULES  number of BMS modules, 0=auto-detect (default: 0)
   --towers TOWERS    number of towers for display grouping (default: 1)
-  --yes, -y          accept disclaimer without prompting
+  --yes, -y          accept disclaimer without prompting - read before first use!
 ```
 
 | Argument | Description |
@@ -114,6 +114,7 @@ DHCP leases for the BMU's assigned address. You can verify connectivity by openi
 
 | System | Modules | Cells | Status |
 |--------|---------|-------|--------|
+| BYD LVS Premium 24 kWh (1 towers × 6 modules) | 6 | 128 | Verified |
 | BYD LVS Premium 32 kWh (2 towers × 4 modules) | 8 | 128 | Verified |
 
 The protocol should also work with HVS and HVM systems (same BMU firmware),
@@ -121,7 +122,7 @@ but cell count and temperature layout may differ. Contributions welcome!
 
 ## Compatibility
 
-- **pymodbus 3.5+**: Automatic framer import detection (supports 3.5 through 3.12+)
+- **pymodbus 3.10+**: Tested with pymodbus 3.10–3.12
 - **Python 3.8+**: No external dependencies beyond pymodbus
 - **Tested on**: Raspberry Pi OS (arm64), Ubuntu 24.04, macOS
 
