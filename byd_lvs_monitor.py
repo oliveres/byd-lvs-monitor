@@ -376,7 +376,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         ch = d['charge_energy_kwh']
         dch = d['discharge_energy_kwh']
         eff = (dch / ch * 100) if ch > 0 else 0
-        warr_pct = (dch / mod_warranty_kwh * 100) if mod_warranty_kwh > 0 else 0
+        warr_pct = 100 - (dch / mod_warranty_kwh * 100) if mod_warranty_kwh > 0 else 0
 
         l1 = (f"Module {mod}{sn_str}"
               f"  State: {state}  {bal_tag}  Cycles: ~{cycles:.0f}"
