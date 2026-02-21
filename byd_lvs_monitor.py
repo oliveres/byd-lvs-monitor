@@ -331,7 +331,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
     hdr = "    "
     for i in range(1, CELLS_PER_MODULE + 1):
         hdr += f"{'C' + str(i):>{CW}s}"
-    hdr += "    Avg  Drift"
+    hdr += "    Avg    Drift"
     line(hdr)
     if title:
         sep()
@@ -412,7 +412,8 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
             else:
                 ansi_parts += cell_str
             vis_parts += cell_str
-        stats = f"  {cv_avg:5.0f} {cv_spread:4d} mV"
+        drift_str = f"{cv_spread} mV"
+        stats = f"  {cv_avg:5.0f}   {drift_str:^7s}"
         line(vis_parts + stats, ansi_parts + stats)
 
         # Temperature row — outlier detection against second nearest value
