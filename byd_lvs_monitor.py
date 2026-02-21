@@ -326,7 +326,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         print(f"  ├{'─' * (IW + 2)}┤")
 
     # Header
-    title = f"  Tower {tower_num}" if towers > 1 else ""
+    title = f"Tower {tower_num}" if towers > 1 else ""
     print(f"\n  ┌{'─' * (IW + 2)}┐")
     hdr = "      "
     for i in range(1, CELLS_PER_MODULE + 1):
@@ -335,7 +335,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
     line(hdr)
     if title:
         sep()
-        line(title, f"  {color(f'Tower {tower_num}', '1;37')}")
+        line(title, color(f'Tower {tower_num}', '1;37'))
     sep()
 
     bms_ids = sorted(tower_data.keys())
@@ -376,7 +376,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
               f"  SoH={d['soh']}%  Warranty rem: {warr_pct:.1f}%")
         vis1 = f"BMS{bms_id}  {l1}"
         ansi_state = color(state, '1;31') if state != "OK" else color(state, '1;32')
-        ansi_bal = color(f'Balancing: {bal_count}', '1;33') if bal_count > 0 else "Balancing: OFF"
+        ansi_bal = color(f'Balancing: {bal_count}', '1;33') if bal_count > 0 else f"Balancing: {color('OFF', '1;32')}"
         ansi1 = (f"{color(f'BMS{bms_id}', '1;37')}  Module {mod}{sn_str}"
                  f"  State: {ansi_state}  {ansi_bal}  Cycles: ~{cycles:.0f}"
                  f"  SoH={d['soh']}%  Warranty rem: {warr_pct:.1f}%")
