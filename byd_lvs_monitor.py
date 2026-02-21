@@ -437,7 +437,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
                 ansi_parts += " " * CW
         if ct_valid:
             ct_avg_val = sum(ct_valid) / len(ct_valid)
-            stats = f"  {ct_avg_val:5.0f} {ct_max - ct_min:4d}°C"
+            stats = f"  {ct_avg_val:5.0f}  {ct_max - ct_min:4d}°C"
         else:
             stats = ""
         line(vis_parts + stats, ansi_parts + stats)
