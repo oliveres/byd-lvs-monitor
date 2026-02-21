@@ -256,16 +256,18 @@ def rpad(visible_text, ansi_text, width):
     return ansi_text + " " * pad
 
 
-def print_header(host, port, num_modules, bmu_serial=None):
+def print_header():
     """Print report header."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sn = f"    SN: {bmu_serial}" if bmu_serial else ""
-    print(f"\n{'═' * 122}")
-    print(f"  Battery Monitor — BYD LVS Premium    {now}    ({host}:{port}, {num_modules} modules){sn}")
-    print(f"{'═' * 122}")
+    title = "Battery Monitor — BYD LVS Premium"
+    IW = 120
+    header_line = f"  {title}{now:>{IW - len(title)}}"
+    print(f"\n  {'═' * IW}")
+    print(header_line)
+    print(f"  {'═' * IW}")
 
 
-def print_summary(summary):
+def print_summary(summary, host=None, port=None, bmu_serial=None):
     """Print system summary box."""
     if not summary:
         print("  [Summary unavailable]")
@@ -273,17 +275,32 @@ def print_summary(summary):
     s = summary
     SW = 120
     print(f"\n  ┌{'─' * SW}┐")
-    curr_s = f"{s['current']:+.1f}A"
+
+    # Line 0: Connection info
+    conn = f"  Connected: {host}:{port}"
+    sn_str = f"  BMU SN: {bmu_serial}" if bmu_serial else ""
+    modules = f"  Modules: {s.get('_num_modules', '?')}"
+    vis_l0 = f"{conn}{modules}{sn_str}"
+    ansi_l0 = f"  {color('Connected:', '1;32')} {host}:{port}{modules}{sn_str}"
+    pad0 = max(0, SW - len(vis_l0))
+    print(f"  │{ansi_l0}{' ' * pad0}│")
+
+    # Line 1: Electrical
     pwr = s['current'] * s['pack_voltage']
-    pwr_s = f"{pwr:+.0f}W"
-    l1 = f"  SOC: {s['soc']:3d}%   SOH: {s['soh']:3d}%   Pack: {s['pack_voltage']:6.2f}V   {curr_s:>8s}   {pwr_s:>7s}"
-    l2 = f"  Cell V: {s['max_cell_v']:.2f} - {s['min_cell_v']:.2f}V   Temp: {s['min_temp']:2d} - {s['max_temp']:2d}°C"
-    # Energy throughput
+    l1 = (f"  SoC: {s['soc']:3d}%  SoH: {s['soh']:3d}%"
+          f"  Voltage: {s['pack_voltage']:6.2f}V"
+          f"  Current: {s['current']:+.1f}A"
+          f"  Power: {pwr:+.0f}W")
+    print(f"  │{l1:<{SW}}│")
+
+    # Line 2: Cells, temp, energy
     ch = s['charge_energy_kwh']
     dch = s['discharge_energy_kwh']
     eff = (dch / ch * 100) if ch > 0 else 0
-    l2 += f"   Energy: {ch:.0f}⬆ {dch:.0f}⬇ kWh   η={eff:.1f}%"
-    print(f"  │{l1:<{SW}}│")
+    l2 = (f"  Cells: {s['min_cell_v']:.2f} - {s['max_cell_v']:.2f}V"
+          f"  Temp: {s['min_temp']:2d} - {s['max_temp']:2d}°C"
+          f"  Energy in: {ch:.0f} kWh  Energy out: {dch:.0f} kWh"
+          f"  Round trip efficiency: {eff:.1f}%")
     print(f"  │{l2:<{SW}}│")
     print(f"  └{'─' * SW}┘")
 
@@ -536,14 +553,15 @@ def main():
 
         # Read BMU serial number
         bmu_serial = read_bmu_serial(client)
-        print_header(args.host, args.port, num_modules, bmu_serial)
+        print_header()
 
         # System summary
         summary = read_summary(client)
         if summary:
             summary['towers'] = args.towers
             summary['bmu_serial'] = bmu_serial
-        print_summary(summary)
+            summary['_num_modules'] = num_modules
+        print_summary(summary, args.host, args.port, bmu_serial)
 
         # Query all modules
         all_data = {}
