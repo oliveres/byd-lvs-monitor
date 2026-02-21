@@ -322,19 +322,27 @@ def print_cell_table(all_data, num_modules, towers=1):
     sys_warr_kwh = warranty_per_tower_kwh * towers
     mod_warranty_kwh = sys_warr_kwh / num_modules if sys_warr_kwh > 0 else 0
 
-    # Fixed inner width
+    # Fixed inner width (border = IW+2, matching summary box)
     IW = 118
+    CW = 6   # cell column width
 
     def line(text_vis, text_ansi=""):
         if not text_ansi:
             text_ansi = text_vis
         print(f"  │ {rpad(text_vis, text_ansi, IW)} │")
 
+    def blank():
+        print(f"  │ {' ' * IW} │")
+
     def sep():
         print(f"  ├{'─' * (IW + 2)}┤")
 
+    # Header
     print(f"\n  ┌{'─' * (IW + 2)}┐")
-    hdr = "       C1   C2   C3   C4   C5   C6   C7   C8   C9  C10  C11  C12  C13  C14  C15  C16   Avg   Δ"
+    hdr = "        "
+    for i in range(1, CELLS_PER_MODULE + 1):
+        hdr += f"{'C' + str(i):>{CW}s}"
+    hdr += "    Avg  Drift"
     line(hdr)
     sep()
 
@@ -355,7 +363,7 @@ def print_cell_table(all_data, num_modules, towers=1):
         ct_min = min(ct_valid) if ct_valid else 0
         ct_max = max(ct_valid) if ct_valid else 0
 
-        # Module info — line 1: identity + state
+        # Module info — line 1: identity, state, cycles, SoH, warranty
         tower = (bms_id - 1) // mods_per_tower + 1
         mod = (bms_id - 1) % mods_per_tower + 1
         sn = d.get('serial') or ''
@@ -370,73 +378,75 @@ def print_cell_table(all_data, num_modules, towers=1):
             state = "OK"
         bal_tag = f"Balancing: {bal_count}" if bal_count > 0 else "Balancing: OFF"
         cycles = d['discharge_energy_kwh'] / MODULE_USABLE_KWH
-
-        line1 = (f"Tower {tower}  Module {mod}{sn_str}"
-                 f"  State: {state}  {bal_tag}  Cycles: ~{cycles:.0f}")
-        vis1 = f"BMS{bms_id}  {line1}"
-        ansi_state = color(state, '1;31') if state != "OK" else color(state, '1;32')
-        ansi_bal = color(f'Balancing: {bal_count}', '1;33') if bal_count > 0 else "Balancing: OFF"
-        ansi1 = (f"{color(f'BMS{bms_id}', '1;37')}  Tower {tower}  Module {mod}{sn_str}"
-                 f"  State: {ansi_state}  {ansi_bal}  Cycles: ~{cycles:.0f}")
-        line(vis1, ansi1)
-
-        # Module info — line 2: electrical + energy
         ch = d['charge_energy_kwh']
         dch = d['discharge_energy_kwh']
         eff = (dch / ch * 100) if ch > 0 else 0
         warr_pct = (dch / mod_warranty_kwh * 100) if mod_warranty_kwh > 0 else 0
 
-        line2 = (f"SoC={d['soc']:.1f}%  SoH={d['soh']}%"
-                 f"  {d['bat_voltage']:.1f}V  {d['current']:+.1f}A  {d['power']:+.0f}W"
-                 f"  {d['min_temp']}-{d['max_temp']}°C"
-                 f"  kWh-in: {ch:.1f}  kWh-out: {dch:.1f}"
-                 f"  η: {eff:.0f}%  Warranty: {warr_pct:.1f}%")
-        vis2 = f"      {line2}"
-        line(vis2)
+        l1 = (f"Tower {tower}  Module {mod}{sn_str}"
+              f"  State: {state}  {bal_tag}  Cycles: ~{cycles:.0f}"
+              f"  SoH={d['soh']}%  Warranty: {warr_pct:.1f}%")
+        vis1 = f"BMS{bms_id}  {l1}"
+        ansi_state = color(state, '1;31') if state != "OK" else color(state, '1;32')
+        ansi_bal = color(f'Balancing: {bal_count}', '1;33') if bal_count > 0 else "Balancing: OFF"
+        ansi1 = (f"{color(f'BMS{bms_id}', '1;37')}  Tower {tower}  Module {mod}{sn_str}"
+                 f"  State: {ansi_state}  {ansi_bal}  Cycles: ~{cycles:.0f}"
+                 f"  SoH={d['soh']}%  Warranty: {warr_pct:.1f}%")
+        line(vis1, ansi1)
+
+        # Module info — line 2: electrical + energy
+        l2 = (f"SoC: {d['soc']:.1f}%  Voltage: {d['bat_voltage']:.1f}V"
+              f"  Current: {d['current']:+.1f}A  Power: {d['power']:+.0f}W"
+              f"  Temp: {d['min_temp']}-{d['max_temp']}°C"
+              f"  kWh-in: {ch:.1f}  kWh-out: {dch:.1f}  η: {eff:.0f}%")
+        line(f"      {l2}")
+
+        # Empty line between info and data
+        blank()
 
         # Voltage row
-        vis_parts = "  mV"
-        ansi_parts = "  mV"
+        vis_parts = "   mV  "
+        ansi_parts = "   mV  "
         for v in cv:
-            cell_str = f" {v:4d}"
+            cell_str = f"{v:{CW}d}"
             if v == g_v_max:
-                ansi_parts += f" {color(f'{v:4d}', '1;32')}"
+                ansi_parts += color(f"{v:{CW}d}", '1;32')
             elif v == g_v_min:
-                ansi_parts += f" {color(f'{v:4d}', '1;31')}"
+                ansi_parts += color(f"{v:{CW}d}", '1;31')
             elif v == cv_max and cv_spread > 2:
-                ansi_parts += f" {color(f'{v:4d}', '92')}"
+                ansi_parts += color(f"{v:{CW}d}", '92')
             elif v == cv_min and cv_spread > 2:
-                ansi_parts += f" {color(f'{v:4d}', '91')}"
+                ansi_parts += color(f"{v:{CW}d}", '91')
             else:
                 ansi_parts += cell_str
             vis_parts += cell_str
-        stats = f"  {cv_avg:4.0f} {cv_spread:3d}"
+        stats = f"  {cv_avg:5.0f} {cv_spread:4d} mV"
         line(vis_parts + stats, ansi_parts + stats)
 
         # Temperature row
-        vis_parts = "  °C"
-        ansi_parts = "  °C"
+        vis_parts = "   °C  "
+        ansi_parts = "   °C  "
         for i in range(CELLS_PER_MODULE):
             if i < len(ct) and ct[i] > 0:
                 t = ct[i]
-                cell_str = f" {t:4d}"
+                cell_str = f"{t:{CW}d}"
                 if t == g_t_max:
-                    ansi_parts += f" {color(f'{t:4d}', '1;31')}"
+                    ansi_parts += color(f"{t:{CW}d}", '1;31')
                 elif t == g_t_min:
-                    ansi_parts += f" {color(f'{t:4d}', '1;34')}"
+                    ansi_parts += color(f"{t:{CW}d}", '1;34')
                 elif t == ct_max and ct_max > ct_min:
-                    ansi_parts += f" {color(f'{t:4d}', '91')}"
+                    ansi_parts += color(f"{t:{CW}d}", '91')
                 elif t == ct_min and ct_max > ct_min:
-                    ansi_parts += f" {color(f'{t:4d}', '94')}"
+                    ansi_parts += color(f"{t:{CW}d}", '94')
                 else:
                     ansi_parts += cell_str
                 vis_parts += cell_str
             else:
-                vis_parts += "    ·"
-                ansi_parts += "    ·"
+                vis_parts += " " * CW
+                ansi_parts += " " * CW
         if ct_valid:
             ct_avg_val = sum(ct_valid) / len(ct_valid)
-            stats = f"  {ct_avg_val:4.0f} {ct_max - ct_min:3d}"
+            stats = f"  {ct_avg_val:5.0f} {ct_max - ct_min:4d}°C"
         else:
             stats = ""
         line(vis_parts + stats, ansi_parts + stats)
@@ -445,16 +455,16 @@ def print_cell_table(all_data, num_modules, towers=1):
         bal = d.get('balancing', [])
         bal_count = d.get('balancing_active', 0)
         if bal_count > 0:
-            vis_parts = " BAL"
-            ansi_parts = " BAL"
+            vis_parts = "  BAL  "
+            ansi_parts = "  BAL  "
             for i in range(CELLS_PER_MODULE):
                 if i < len(bal) and bal[i]:
-                    vis_parts += "    ●"
-                    ansi_parts += f"    {color('●', '1;33')}"
+                    vis_parts += f"{'●':>{CW}s}"
+                    ansi_parts += color(f"{'●':>{CW}s}", '1;33')
                 else:
-                    vis_parts += "    ·"
-                    ansi_parts += "    ·"
-            stats = f"     {bal_count:3d}"
+                    vis_parts += f"{'·':>{CW}s}"
+                    ansi_parts += f"{'·':>{CW}s}"
+            stats = f"      {bal_count:4d}"
             line(vis_parts + stats, ansi_parts + stats)
 
         sep()
