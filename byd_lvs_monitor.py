@@ -328,7 +328,7 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
     # Header
     title = f"Tower {tower_num}" if towers > 1 else ""
     print(f"\n  ┌{'─' * (IW + 2)}┐")
-    hdr = "      "
+    hdr = "   "
     for i in range(1, CELLS_PER_MODULE + 1):
         hdr += f"{'C' + str(i):>{CW}s}"
     hdr += "    Avg  Drift"
@@ -419,8 +419,8 @@ def print_tower_table(tower_data, tower_num, mods_per_tower, towers):
         unique_t = sorted(set(ct_valid)) if ct_valid else []
         t_min_outlier = (unique_t[1] - unique_t[0] >= 2) if len(unique_t) > 1 else False
         t_max_outlier = (unique_t[-1] - unique_t[-2] >= 2) if len(unique_t) > 1 else False
-        vis_parts = " °C  "
-        ansi_parts = " °C  "
+        vis_parts = " Tmp"
+        ansi_parts = " Tmp"
         for i in range(CELLS_PER_MODULE):
             if i < len(ct) and ct[i] > 0:
                 t = ct[i]
