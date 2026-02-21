@@ -89,7 +89,7 @@ def connect(host, port):
 
 def read_bmu_serial(client):
     """Read BMU serial number from config registers 0x0000 (10 regs = 20 bytes ASCII)."""
-    result = client.read_holding_registers(0x0000, 10, slave=SLAVE_ID)
+    result = client.read_holding_registers(0x0000, count=10, device_id=SLAVE_ID)
     if result.isError():
         return None
     serial = ""
@@ -103,7 +103,7 @@ def read_bmu_serial(client):
 
 def detect_modules(client):
     """Auto-detect number of BMS modules from config register 0x0010."""
-    result = client.read_holding_registers(0x0010, 1, slave=SLAVE_ID)
+    result = client.read_holding_registers(0x0010, count=1, device_id=SLAVE_ID)
     if result.isError():
         return None
     module_count = result.registers[0] & 0x0F
@@ -112,7 +112,7 @@ def detect_modules(client):
 
 def read_summary(client):
     """Read system summary from 0x0500."""
-    result = client.read_holding_registers(REG_SUMMARY, 25, slave=SLAVE_ID)
+    result = client.read_holding_registers(REG_SUMMARY, count=25, device_id=SLAVE_ID)
     if result.isError():
         return None
 
@@ -147,7 +147,7 @@ def query_module(client, bms_id):
     Returns dict with decoded values or None on failure.
     """
     # Step 1: Write command
-    wr = client.write_registers(REG_BMS_CMD, [bms_id, CMD_BMS_READ], slave=SLAVE_ID)
+    wr = client.write_registers(REG_BMS_CMD, [bms_id, CMD_BMS_READ], device_id=SLAVE_ID)
     if wr.isError():
         return None
 
@@ -156,7 +156,7 @@ def query_module(client, bms_id):
     while elapsed < POLL_TIMEOUT:
         time.sleep(POLL_INTERVAL)
         elapsed += POLL_INTERVAL
-        result = client.read_holding_registers(REG_BMS_STATUS, 1, slave=SLAVE_ID)
+        result = client.read_holding_registers(REG_BMS_STATUS, count=1, device_id=SLAVE_ID)
         if not result.isError() and result.registers[0] == RESP_BMS_READY:
             break
     else:
@@ -166,7 +166,7 @@ def query_module(client, bms_id):
     r = []
     for chunk in range(BMS_DATA_CHUNKS):
         time.sleep(0.1)
-        result = client.read_holding_registers(REG_BMS_DATA, BMS_CHUNK_SIZE, slave=SLAVE_ID)
+        result = client.read_holding_registers(REG_BMS_DATA, count=BMS_CHUNK_SIZE, device_id=SLAVE_ID)
         if result.isError():
             r.extend([0] * BMS_CHUNK_SIZE)
         else:
