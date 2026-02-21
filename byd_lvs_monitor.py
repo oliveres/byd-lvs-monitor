@@ -260,11 +260,12 @@ def print_header():
     """Print report header."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     title = "Battery Monitor — BYD LVS Premium"
-    IW = 120
-    header_line = f"  {title}{now:>{IW - len(title)}}"
-    print(f"\n  {'═' * IW}")
-    print(header_line)
-    print(f"  {'═' * IW}")
+    TW = 122  # total width between leading spaces (matches box ┌─┐ width)
+    # Title indented +3 from left edge, datetime ends 3 before right edge
+    inner = f"   {title}{now:>{TW - len(title) - 6}}   "
+    print(f"\n  {'═' * TW}")
+    print(f"  {inner}")
+    print(f"  {'═' * TW}")
 
 
 def print_summary(summary, host=None, port=None, bmu_serial=None):
@@ -273,7 +274,7 @@ def print_summary(summary, host=None, port=None, bmu_serial=None):
         print("  [Summary unavailable]")
         return
     s = summary
-    SW = 120
+    SW = 120  # inner width (┌ + ─×120 + ┐ = 122 total, matches header ═×122)
     print(f"\n  ┌{'─' * SW}┐")
 
     # Line 0: Connection info
